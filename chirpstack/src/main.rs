@@ -23,6 +23,7 @@ mod adr;
 mod api;
 mod backend;
 mod certificate;
+mod chmask;
 mod cmd;
 mod codec;
 mod config;

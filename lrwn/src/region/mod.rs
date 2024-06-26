@@ -752,11 +752,15 @@ impl RegionBaseConfig {
         Some(CFList::ChannelMask(CFListChannelMasks::new(masks)))
     }
 
+    // This produces a channel mask copying 1:1 the enabled channels in the configs.
+    // Only exception: if an user_defined channel is enabled in the configs but not in the device session, its bit is set to false.
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
     ) -> Vec<LinkADRReqPayload> {
+        // Indices of enabled channels loaded from regional config files (user_defined channels are also specified there)
         let enabled_channels = self.get_enabled_uplink_channel_indices();
+        // Indices of enabled channels from the device session (i.e. the current known device state)
         let device_set: HashSet<usize> = device_enabled_channels.iter().cloned().collect();
         let enabled_set: HashSet<usize> = enabled_channels.iter().cloned().collect();
 
@@ -768,6 +772,11 @@ impl RegionBaseConfig {
             .cloned()
             .collect();
 
+        // filtered_diff removes indices of user_defined channels not in device session
+        // - enabled in config, not in device, default Y
+        // - enabled in config, not in device, extra   N
+        // - enabled in device, not in config, default Y, impossible? Channels are never removed
+        // - enabled in device, not in config, extra   Y, impossible?
         let mut filtered_diff: Vec<usize> = Vec::new();
         for i in &diff {
             if device_set.contains(i) || !self.uplink_channels[*i].user_defined {
@@ -776,6 +785,7 @@ impl RegionBaseConfig {
         }
 
         // Nothing to do.
+        // (no difference or only difference are user_defined chennels enabled in config but disabled in device session)
         if diff.is_empty() || filtered_diff.is_empty() {
             return vec![];
         }

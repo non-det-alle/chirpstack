@@ -60,6 +60,7 @@ pub fn handle(
         ds.mac_command_error_count
             .remove(&(lrwn::CID::LinkADRReq.to_u8() as u32));
 
+        // here the enabled channels in the device session are updated
         let chans = region_conf
             .get_enabled_uplink_channel_indices_for_link_adr_payloads(
                 &ds.enabled_uplink_channel_indices

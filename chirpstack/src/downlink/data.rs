@@ -593,6 +593,7 @@ impl Data {
         }
     }
 
+    // inside here is reconfiguration logic
     async fn set_mac_commands(&mut self) -> Result<()> {
         let conf = config::get();
         if conf.network.mac_commands_disabled {
@@ -1118,6 +1119,10 @@ impl Data {
         Ok(())
     }
 
+    // this (i) gests user_defined channels from config (a.k.a. extra_channels in .toml) and extra_channels in the device session,
+    // (ii) removes extra_channels in device session that are absent from configs (channel mask will then disable them),
+    // (iii) appends (at most 3) NewChannelReq for channels present/changed in configs but not in device session
+    // in summary, makes sure that the extra_channels used by the device stay exactly the ones specified in the configs
     async fn _request_custom_channel_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting custom channel re-configuration");
         let mut wanted_channels: HashMap<usize, lrwn::region::Channel> = HashMap::new();
@@ -1170,6 +1175,9 @@ impl Data {
     }
 
     // Note: this must come before ADR!
+    // this (i) gets enabled channels from device session,
+    // (ii) produces LinkADRReq payloads as per configs, (!) ignoring user_defined channels not enabled in device session,
+    // (iii) appends LinkADRReq commands
     async fn _request_channel_mask_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting channel-mask reconfiguration");
         let ds = self.device.get_device_session()?;
@@ -1180,6 +1188,9 @@ impl Data {
             .map(|i| *i as usize)
             .collect();
 
+        // This gets the LinkADRReqPayloads with the mask(s) of enabled channels in configs
+        // (in regions with > 16 channels, several command payloads might be required)
+        // Ignores user_defined channels not enabled in device session
         let mut payloads = self
             .region_conf
             .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
@@ -1294,6 +1305,7 @@ impl Data {
                 let mut ch_mask: [bool; 16] = [false; 16];
                 let mut ch_mask_cntl: Option<u8> = None;
 
+                // create single-block of channel mask to put in the new LinkADRReq
                 for i in &ds.enabled_uplink_channel_indices {
                     match ch_mask_cntl {
                         None => {
