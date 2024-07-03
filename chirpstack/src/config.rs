@@ -142,6 +142,7 @@ pub struct Network {
     pub get_downlink_data_delay: Duration,
     pub mac_commands_disabled: bool,
     pub adr_plugins: Vec<String>,
+    pub chmask_plugins: Vec<String>,
     pub scheduler: Scheduler,
 }
 
@@ -157,6 +158,7 @@ impl Default for Network {
             get_downlink_data_delay: Duration::from_millis(100),
             mac_commands_disabled: false,
             adr_plugins: vec![],
+            chmask_plugins: vec![],
             scheduler: Default::default(),
         }
     }

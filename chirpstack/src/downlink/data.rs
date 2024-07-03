@@ -1,5 +1,5 @@
 use std::cmp;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,7 +22,7 @@ use crate::storage::{
     mac_command, relay, tenant,
 };
 use crate::uplink::{RelayContext, UplinkFrameSet};
-use crate::{adr, config, gateway, integration, maccommand, region, sensitivity};
+use crate::{adr, chmask, config, gateway, integration, maccommand, region, sensitivity};
 use chirpstack_api::{gw, integration as integration_pb, internal};
 use lrwn::{keys, AES128Key, NetID};
 
@@ -1180,6 +1180,7 @@ impl Data {
     // (iii) appends LinkADRReq commands
     async fn _request_channel_mask_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting channel-mask reconfiguration");
+        let ufs = self.uplink_frame_set.as_ref().unwrap();
         let ds = self.device.get_device_session()?;
 
         let enabled_uplink_channel_indices: Vec<usize> = ds
@@ -1187,6 +1188,27 @@ impl Data {
             .iter()
             .map(|i| *i as usize)
             .collect();
+
+        let provisioned_uplink_channel_indices: Vec<usize> = self
+            .region_conf
+            .get_default_uplink_channel_indices()
+            .into_iter()
+            .chain(ds.extra_uplink_channels.keys().map(|k| *k as usize))
+            .collect();
+
+        let req = chmask::Request {
+            region_config_id: ufs.region_config_id.clone(),
+            region_common_name: ufs.region_common_name,
+            dev_eui: self.device.dev_eui,
+            mac_version: self.device_profile.mac_version,
+            reg_params_revision: self.device_profile.reg_params_revision,
+            enabled_uplink_channel_indices: &enabled_uplink_channel_indices,
+            provisioned_uplink_channel_indices: &provisioned_uplink_channel_indices,
+            uplink_history: ds.uplink_adr_history.clone(),
+            device_variables: self.device.variables.into_hashmap(),
+        };
+
+        let resp = chmask::handle("default", &req).await;
 
         // This gets the LinkADRReqPayloads with the mask(s) of enabled channels in configs
         // (in regions with > 16 channels, several command payloads might be required)
