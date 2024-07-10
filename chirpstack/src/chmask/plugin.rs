@@ -1,4 +1,4 @@
-use std::fs;
+use std::{collections::HashMap, fs};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -69,15 +69,21 @@ impl Handler for Plugin {
             input.set("devEui", req.dev_eui.to_string())?;
             input.set("macVersion", req.mac_version.to_string())?;
             input.set("regParamsRevision", req.reg_params_revision.to_string())?;
-            input.set(
-                "enabledUplinkChannelIndices",
-                req.enabled_uplink_channel_indices,
-            )?;
-            input.set(
-                "provisionedUplinkChannelIndices",
-                req.provisioned_uplink_channel_indices,
-            )?;
             input.set("deviceVariables", device_variables)?;
+
+            let mut uplink_channels: HashMap<u32, rquickjs::Object> = HashMap::new();
+
+            for (k, v) in &req.uplink_channels {
+                let obj = rquickjs::Object::new(ctx.clone())?;
+                obj.set("frequency", v.frequency)?;
+                obj.set("minDr", v.min_dr)?;
+                obj.set("maxDr", v.max_dr)?;
+                obj.set("enabled", v.enabled)?;
+                obj.set("userDefined", v.user_defined)?;
+                uplink_channels.insert(*k as u32, obj);
+            }
+
+            input.set("uplinkChannels", uplink_channels);
 
             let mut uplink_history: Vec<rquickjs::Object> = Vec::new();
 
@@ -93,9 +99,9 @@ impl Handler for Plugin {
 
             input.set("uplinkHistory", uplink_history)?;
 
-            let res: Response = func.call((input,)).context("Call handle function")?;
+            let res: Vec<usize> = func.call((input,)).context("Call handle function")?;
 
-            Ok(res)
+            Ok(Response(res))
         })
     }
 }
@@ -112,19 +118,29 @@ pub mod test {
         assert_eq!("Example plugin", p.get_name());
         assert_eq!("example_id", p.get_id());
 
+        let c = lrwn::region::Channel {
+            enabled: true,
+            ..Default::default()
+        };
+
         let req = Request {
             region_config_id: "eu868".into(),
             region_common_name: lrwn::region::CommonName::EU868,
             dev_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
             mac_version: lrwn::region::MacVersion::LORAWAN_1_0_3,
             reg_params_revision: lrwn::region::Revision::A,
-            enabled_uplink_channel_indices: &vec![0, 1, 2],
-            provisioned_uplink_channel_indices: &vec![0, 1, 2, 3, 4],
+            uplink_channels: std::collections::HashMap::from([
+                (0, c.clone()),
+                (1, c.clone()),
+                (2, c.clone()),
+                (3, Default::default()),
+                (4, Default::default()),
+            ]),
             uplink_history: vec![],
             device_variables: Default::default(),
         };
 
         let resp = p.handle(&req).await.unwrap();
-        assert_eq!(vec![1, 3], resp);
+        assert_eq!(Response(vec![1, 3]), resp);
     }
 }

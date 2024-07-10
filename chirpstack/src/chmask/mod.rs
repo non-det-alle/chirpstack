@@ -7,7 +7,7 @@ use tracing::{info, trace, warn};
 
 use crate::config;
 use chirpstack_api::internal;
-use lrwn::EUI64;
+use lrwn::{region::Channel, EUI64};
 
 pub mod default;
 pub mod plugin;
@@ -47,19 +47,19 @@ pub async fn get_algorithms() -> HashMap<String, String> {
     out
 }
 
-pub async fn handle(algo_id: &str, req: &Request<'_>) -> Response {
+pub async fn handle(algo_id: &str, req: &Request) -> Response {
     let algos = CHMASK_ALGORITHMS.read().await;
     match algos.get(algo_id) {
         Some(v) => match v.handle(req).await {
             Ok(v) => v,
             Err(e) => {
                 warn!(algorithm_id = %algo_id, error = %e, "ChannelMask algorithm returned error");
-                req.enabled_uplink_channel_indices.into()
+                req.dry_response()
             }
         },
         None => {
             warn!(algorithm_id = %algo_id, "No ChannelMask algorithm configured with given ID");
-            req.enabled_uplink_channel_indices.into()
+            req.dry_response()
         }
     }
 }
@@ -77,16 +77,27 @@ pub trait Handler {
 }
 
 #[derive(Clone)]
-pub struct Request<'a> {
+pub struct Request {
     pub region_config_id: String,
     pub region_common_name: lrwn::region::CommonName,
     pub dev_eui: EUI64,
     pub mac_version: lrwn::region::MacVersion,
     pub reg_params_revision: lrwn::region::Revision,
-    pub enabled_uplink_channel_indices: &'a [usize],
-    pub provisioned_uplink_channel_indices: &'a [usize],
+    pub uplink_channels: HashMap<usize, Channel>,
     pub uplink_history: Vec<internal::UplinkAdrHistory>,
     pub device_variables: HashMap<String, String>,
 }
 
-type Response = Vec<usize>;
+impl Request {
+    fn dry_response(&self) -> Response {
+        Response(
+            self.uplink_channels
+                .iter()
+                .filter_map(|(k, v)| if v.enabled { Some(*k) } else { None })
+                .collect(),
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Response(Vec<usize>);
