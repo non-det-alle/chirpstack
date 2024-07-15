@@ -433,10 +433,11 @@ pub trait Region {
     fn get_cf_list(&self, mac_version: MacVersion) -> Option<CFList>;
 
     /// Returns the LinkADRReqPayloads to reconfigure the device to the current enabled channels.
-    /// Note that in case of activation, user-defined channels (e.g. CFList) will be ignored as it
-    /// is unknown if the device is aware of these extra frequencies.
+    /// Pay attention not to request activation to user-defined channels (e.g. CFList) not yet
+    /// provisioned to the device (i.e. not acknowledged and added to device session).
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
+        enabled_uplink_channel_indices: &[usize],
         device_enabled_channels: &[usize],
     ) -> Vec<LinkADRReqPayload>;
 
@@ -752,15 +753,13 @@ impl RegionBaseConfig {
         Some(CFList::ChannelMask(CFListChannelMasks::new(masks)))
     }
 
-    // This produces a channel mask copying 1:1 the enabled channels in the configs.
-    // Only exception: if an user_defined channel is enabled in the configs but not in the device session, its bit is set to false.
+    // enable/disable channels to match configs, but never enable user_defined channels
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
+        enabled_uplink_channel_indices: &[usize],
         device_enabled_channels: &[usize],
     ) -> Vec<LinkADRReqPayload> {
-        // Indices of enabled channels loaded from regional config files (user_defined channels are also specified there)
         let enabled_channels = self.get_enabled_uplink_channel_indices();
-        // Indices of enabled channels from the device session (i.e. the current known device state)
         let device_set: HashSet<usize> = device_enabled_channels.iter().cloned().collect();
         let enabled_set: HashSet<usize> = enabled_channels.iter().cloned().collect();
 
@@ -772,11 +771,7 @@ impl RegionBaseConfig {
             .cloned()
             .collect();
 
-        // filtered_diff removes indices of user_defined channels not in device session
-        // - enabled in config, not in device, default Y
-        // - enabled in config, not in device, extra   N
-        // - enabled in device, not in config, default Y, impossible? Channels are never removed
-        // - enabled in device, not in config, extra   Y, impossible?
+        // ignore user_defined channels not enabled on the device
         let mut filtered_diff: Vec<usize> = Vec::new();
         for i in &diff {
             if device_set.contains(i) || !self.uplink_channels[*i].user_defined {
@@ -785,8 +780,10 @@ impl RegionBaseConfig {
         }
 
         // Nothing to do.
-        // (no difference or only difference are user_defined chennels enabled in config but disabled in device session)
-        if diff.is_empty() || filtered_diff.is_empty() {
+        // with A: diff.is_empty(), B: filtered_diff.is_empty()
+        //   1: A => B ≡ T ≡ ¬A ∨ B
+        //   2: A ∨ B ≡ (A ∨ B) ∧ (¬A ∨ B) ≡ (A ∧ ¬A) ∨ B ≡ ⊥ ∨ B ≡ B
+        if filtered_diff.is_empty() {
             return vec![];
         }
 

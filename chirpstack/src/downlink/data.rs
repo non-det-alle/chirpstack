@@ -24,7 +24,7 @@ use crate::storage::{
 use crate::uplink::{RelayContext, UplinkFrameSet};
 use crate::{adr, chmask, config, gateway, integration, maccommand, region, sensitivity};
 use chirpstack_api::{gw, integration as integration_pb, internal};
-use lrwn::{keys, AES128Key, NetID};
+use lrwn::{keys, AES128Key, NetID, Redundancy, ChMask, LinkADRReqPayload};
 
 struct DownlinkFrameItem {
     downlink_frame_item: gw::DownlinkFrameItem,
@@ -1122,7 +1122,7 @@ impl Data {
     // this (i) gests user_defined channels from config (a.k.a. extra_channels in .toml) and extra_channels in the device session,
     // (ii) removes extra_channels in device session that are absent from configs (channel mask will then disable them),
     // (iii) appends (at most 3) NewChannelReq for channels present/changed in configs but not in device session
-    // in summary, makes sure that the extra_channels used by the device stay exactly the ones specified in the configs
+    // in summary, makes sure that the extra_channels registered in the device always mirror exactly the ones specified in the configs
     async fn _request_custom_channel_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting custom channel re-configuration");
         let mut wanted_channels: HashMap<usize, lrwn::region::Channel> = HashMap::new();
@@ -1176,25 +1176,34 @@ impl Data {
 
     // Note: this must come before ADR!
     // this (i) gets enabled channels from device session,
-    // (ii) produces LinkADRReq payloads as per configs, (!) ignoring user_defined channels not enabled in device session,
+    // (ii) produces LinkADRReq payloads as per configs,
     // (iii) appends LinkADRReq commands
     async fn _request_channel_mask_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting channel-mask reconfiguration");
-        let ufs = self.uplink_frame_set.as_ref().unwrap();
         let ds = self.device.get_device_session()?;
+        let ufs = self.uplink_frame_set.as_ref().unwrap();
 
-        let enabled_uplink_channel_indices: Vec<usize> = ds
+        // indices of enabled uplink channels from last LinkADRReq acknowledgement
+        let device_enabled_set: HashSet<usize> = ds
             .enabled_uplink_channel_indices
             .iter()
             .map(|i| *i as usize)
             .collect();
 
-        let provisioned_uplink_channel_indices: Vec<usize> = self
-            .region_conf
-            .get_default_uplink_channel_indices()
+        // map of provisioned channels on the device
+        let uplink_channels: HashMap<usize, lrwn::region::Channel> = 
+            // from indices of all active channels in config
+            self.region_conf
+            .get_enabled_uplink_channel_indices()
             .into_iter()
-            .chain(ds.extra_uplink_channels.keys().map(|k| *k as usize))
-            .collect();
+            .filter_map(|i| {
+                    // get channel and retrieve "enabled" status from the device
+                    let mut c = self.region_conf.get_uplink_channel(i).unwrap();
+                    c.enabled = device_enabled_set.contains(&i);
+                    // keep only default regional channels + extra user-defined channels already provisioned 
+                    (!c.user_defined || ds.extra_uplink_channels.contains_key(&(i as u32))).then_some((i, c))
+                })
+                .collect();
 
         let req = chmask::Request {
             region_config_id: ufs.region_config_id.clone(),
@@ -1202,26 +1211,52 @@ impl Data {
             dev_eui: self.device.dev_eui,
             mac_version: self.device_profile.mac_version,
             reg_params_revision: self.device_profile.reg_params_revision,
-            enabled_uplink_channel_indices: &enabled_uplink_channel_indices,
-            provisioned_uplink_channel_indices: &provisioned_uplink_channel_indices,
+            uplink_channels,
             uplink_history: ds.uplink_adr_history.clone(),
             device_variables: self.device.variables.into_hashmap(),
         };
 
-        let resp = chmask::handle("default", &req).await;
+        let chmask::Response(resp) = chmask::handle("default", &req).await;
+        let resp: HashSet<usize> = resp.into_iter().collect();
 
-        // This gets the LinkADRReqPayloads with the mask(s) of enabled channels in configs
-        // (in regions with > 16 channels, several command payloads might be required)
-        // Ignores user_defined channels not enabled in device session
-        let mut payloads = self
-            .region_conf
-            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
-                &enabled_uplink_channel_indices,
-            );
+        // compute the set difference of defive_set and response to create the payloads
+        // - new channels are added to chmask algo input only once acknowledged, thus will not be enabled in resp until than
+        // - channels which are suddenly disabled in config are not included in the input of the chmaks algorithm and thus will not be enabled in resp
+        let mut diff: Vec<usize> = device_enabled_set.symmetric_difference(&resp).cloned().collect();
 
         // Nothing to do.
-        if payloads.is_empty() {
+        if diff.is_empty() {
             return Ok(());
+        }
+
+        // Make sure we're dealing with a sorted slice.
+        diff.sort_unstable();
+
+        let mut payloads: Vec<LinkADRReqPayload> = Vec::new();
+        let mut ch_mask_cntl = -1;
+
+        for i in diff {
+            if i as isize / 16 != ch_mask_cntl {
+                ch_mask_cntl = i as isize / 16;
+                let mut chmask: [bool; 16] = [false; 16];
+
+                for e in &resp {
+                    if (*e as isize) >= ch_mask_cntl * 16 && (*e as isize) < (ch_mask_cntl + 1) * 16
+                    {
+                        chmask[e % 16] = true;
+                    }
+                }
+
+                payloads.push(LinkADRReqPayload {
+                    dr: 0,
+                    tx_power: 0,
+                    ch_mask: ChMask::new(chmask),
+                    redundancy: Redundancy {
+                        ch_mask_cntl: ch_mask_cntl as u8,
+                        nb_rep: 0,
+                    },
+                });
+            }
         }
 
         let last = payloads.last_mut().unwrap();
