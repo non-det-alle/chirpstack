@@ -544,10 +544,14 @@ impl Region for Configuration {
 
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
+        enabled_uplink_channel_indices: &[usize],
         device_enabled_channels: &[usize],
     ) -> Vec<LinkADRReqPayload> {
         self.base
-            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(device_enabled_channels)
+            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                enabled_uplink_channel_indices,
+                device_enabled_channels,
+            )
     }
 
     fn get_enabled_uplink_channel_indices_for_link_adr_payloads(
