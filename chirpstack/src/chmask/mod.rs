@@ -51,7 +51,14 @@ pub async fn handle(algo_id: &str, req: &Request) -> Response {
     let algos = CHMASK_ALGORITHMS.read().await;
     match algos.get(algo_id) {
         Some(v) => match v.handle(req).await {
-            Ok(v) => v,
+            Ok(Response(v)) => {
+                if v.iter().all(|i| req.uplink_channels.contains_key(i)) {
+                    Response(v)
+                } else {
+                    warn!(algorithm_id = %algo_id, "ChannelMask algorithm returned unknown channel");
+                    req.dry_response()
+                }
+            }
             Err(e) => {
                 warn!(algorithm_id = %algo_id, error = %e, "ChannelMask algorithm returned error");
                 req.dry_response()
@@ -100,4 +107,4 @@ impl Request {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Response(Vec<usize>);
+pub struct Response(pub Vec<usize>);
