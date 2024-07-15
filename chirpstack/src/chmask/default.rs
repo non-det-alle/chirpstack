@@ -65,7 +65,8 @@ mod test {
             device_variables: Default::default(),
         };
 
-        let resp = a.handle(&req).await.unwrap();
-        assert_eq!(Response(vec![0, 1, 2]), resp);
+        let Response(mut resp) = a.handle(&req).await.unwrap();
+        resp.sort_unstable();
+        assert_eq!(vec![0, 1, 2], resp);
     }
 }

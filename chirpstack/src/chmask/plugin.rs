@@ -83,7 +83,7 @@ impl Handler for Plugin {
                 uplink_channels.insert(*k as u32, obj);
             }
 
-            input.set("uplinkChannels", uplink_channels);
+            input.set("uplinkChannels", uplink_channels)?;
 
             let mut uplink_history: Vec<rquickjs::Object> = Vec::new();
 
@@ -140,7 +140,8 @@ pub mod test {
             device_variables: Default::default(),
         };
 
-        let resp = p.handle(&req).await.unwrap();
-        assert_eq!(Response(vec![1, 3]), resp);
+        let Response(mut resp) = p.handle(&req).await.unwrap();
+        resp.sort_unstable();
+        assert_eq!(vec![1, 3], resp);
     }
 }
