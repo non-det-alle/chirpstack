@@ -432,6 +432,18 @@ pub trait Region {
     /// are no extra channels, this method returns None.
     fn get_cf_list(&self, mac_version: MacVersion) -> Option<CFList>;
 
+    /// Returns a map (by index) of uplink channel data currently registered onto a device.
+    /// For a channel to be returned it must currently be configured as active in the global
+    /// network configuration, and either be a default channel for this region or be present
+    /// in the `device_extra_channel_indices` input vector. Moreover, channels whose indices are
+    /// listed in the `device_enabled_channels` vector will be set to active in the output
+    /// Channel objects and vice-versa.
+    fn get_device_uplink_channels(
+        &self,
+        device_extra_channel_indices: &[usize],
+        device_enabled_channels: &[usize],
+    ) -> HashMap<usize, Channel>;
+
     /// Returns the LinkADRReqPayloads to reconfigure the device to the current enabled channels.
     /// Pay attention not to request activation to user-defined channels (e.g. CFList) not yet
     /// provisioned to the device (i.e. not acknowledged and added to device session).
@@ -751,6 +763,28 @@ impl RegionBaseConfig {
         masks.push(ChMask::new(mask));
 
         Some(CFList::ChannelMask(CFListChannelMasks::new(masks)))
+    }
+
+    fn get_device_uplink_channels(
+        &self,
+        device_extra_channel_indices: &[usize],
+        device_enabled_channels: &[usize],
+    ) -> HashMap<usize, Channel> {
+        let device_enabled_set: HashSet<usize> = device_enabled_channels.iter().cloned().collect();
+        let device_extra_set: HashSet<usize> =
+            device_extra_channel_indices.iter().cloned().collect();
+        let mut out: HashMap<usize, Channel> = HashMap::new();
+        for (i, c) in self.uplink_channels.iter().enumerate() {
+            if c.user_defined && !device_extra_set.contains(&i) {
+                continue;
+            }
+            let dev_chan = Channel {
+                enabled: device_enabled_set.contains(&i),
+                ..c.clone()
+            };
+            out.insert(i, dev_chan);
+        }
+        out
     }
 
     // enable/disable channels to match the diff with requested configs

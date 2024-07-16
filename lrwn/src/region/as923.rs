@@ -976,6 +976,17 @@ impl Region for Configuration {
         self.base.get_cf_list(mac_version)
     }
 
+    fn get_device_uplink_channels(
+        &self,
+        device_extra_channel_indices: &[usize],
+        device_enabled_channels: &[usize],
+    ) -> HashMap<usize, Channel> {
+        self.base.get_device_uplink_channels(
+            device_extra_channel_indices,
+            device_enabled_channels,
+        )
+    }
+
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         enabled_uplink_channel_indices: &[usize],

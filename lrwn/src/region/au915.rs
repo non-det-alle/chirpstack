@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -1092,6 +1093,17 @@ impl Region for Configuration {
 
     fn get_cf_list(&self, mac_version: MacVersion) -> Option<CFList> {
         self.base.get_cf_list(mac_version)
+    }
+
+    fn get_device_uplink_channels(
+        &self,
+        device_extra_channel_indices: &[usize],
+        device_enabled_channels: &[usize],
+    ) -> HashMap<usize, Channel> {
+        self.base.get_device_uplink_channels(
+            device_extra_channel_indices,
+            device_enabled_channels,
+        )
     }
 
     // Either use base function (diff-based payloads) or this (1 payload to turn off all channels, and queue payloads needed to turn on enabled channels) based on which produces less commands
