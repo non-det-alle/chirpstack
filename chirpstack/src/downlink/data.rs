@@ -1,5 +1,5 @@
 use std::cmp;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -1200,10 +1200,9 @@ impl Data {
 
         // get map of uplink channels currently registered onto the device
         // (channels which are suddenly disabled in config are preemptively not included)
-        let uplink_channels = self.region_conf.get_device_uplink_channels(
-            &device_extra_channel_indices,
-            &device_enabled_channels,
-        );
+        let uplink_channels = self
+            .region_conf
+            .get_device_uplink_channels(&device_extra_channel_indices, &device_enabled_channels);
 
         let req = chmask::Request {
             region_config_id: ufs.region_config_id.clone(),
