@@ -24,7 +24,7 @@ use crate::storage::{
 use crate::uplink::{RelayContext, UplinkFrameSet};
 use crate::{adr, chmask, config, gateway, integration, maccommand, region, sensitivity};
 use chirpstack_api::{gw, integration as integration_pb, internal};
-use lrwn::{keys, AES128Key, NetID, Redundancy, ChMask, LinkADRReqPayload};
+use lrwn::{keys, AES128Key, NetID};
 
 struct DownlinkFrameItem {
     downlink_frame_item: gw::DownlinkFrameItem,
@@ -1184,26 +1184,26 @@ impl Data {
         let ufs = self.uplink_frame_set.as_ref().unwrap();
 
         // indices of enabled uplink channels from last LinkADRReq acknowledgement
-        let device_enabled_set: HashSet<usize> = ds
+        let device_enabled_channels: Vec<usize> = ds
             .enabled_uplink_channel_indices
             .iter()
             .map(|i| *i as usize)
             .collect();
 
-        // map of provisioned channels on the device
-        let uplink_channels: HashMap<usize, lrwn::region::Channel> = 
-            // from indices of all active channels in config
-            self.region_conf
-            .get_enabled_uplink_channel_indices()
-            .into_iter()
-            .filter_map(|i| {
-                    // get channel and retrieve "enabled" status from the device
-                    let mut c = self.region_conf.get_uplink_channel(i).unwrap();
-                    c.enabled = device_enabled_set.contains(&i);
-                    // keep only default regional channels + extra user-defined channels already provisioned 
-                    (!c.user_defined || ds.extra_uplink_channels.contains_key(&(i as u32))).then_some((i, c))
-                })
-                .collect();
+        // indices of extra channels the device has been provisioned with
+        // (new channels are added to dev session only once acknowledged in previous step)
+        let device_extra_channel_indices: Vec<usize> = ds
+            .extra_uplink_channels
+            .keys()
+            .map(|i| *i as usize)
+            .collect();
+
+        // get map of uplink channels currently registered onto the device
+        // (channels which are suddenly disabled in config are preemptively not included)
+        let uplink_channels = self.region_conf.get_device_uplink_channels(
+            &device_extra_channel_indices,
+            &device_enabled_channels,
+        );
 
         let req = chmask::Request {
             region_config_id: ufs.region_config_id.clone(),
@@ -1216,47 +1216,20 @@ impl Data {
             device_variables: self.device.variables.into_hashmap(),
         };
 
-        let chmask::Response(resp) = chmask::handle("default", &req).await;
-        let resp: HashSet<usize> = resp.into_iter().collect();
+        let chmask::Response(enabled_uplink_channel_indices) =
+            chmask::handle("default", &req).await;
 
-        // compute the set difference of defive_set and response to create the payloads
-        // - new channels are added to chmask algo input only once acknowledged, thus will not be enabled in resp until than
-        // - channels which are suddenly disabled in config are not included in the input of the chmaks algorithm and thus will not be enabled in resp
-        let mut diff: Vec<usize> = device_enabled_set.symmetric_difference(&resp).cloned().collect();
+        // computes the diff between the enabled and device set to produce reconfig
+        let mut payloads = self
+            .region_conf
+            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                &enabled_uplink_channel_indices,
+                &device_enabled_channels,
+            );
 
         // Nothing to do.
-        if diff.is_empty() {
+        if payloads.is_empty() {
             return Ok(());
-        }
-
-        // Make sure we're dealing with a sorted slice.
-        diff.sort_unstable();
-
-        let mut payloads: Vec<LinkADRReqPayload> = Vec::new();
-        let mut ch_mask_cntl = -1;
-
-        for i in diff {
-            if i as isize / 16 != ch_mask_cntl {
-                ch_mask_cntl = i as isize / 16;
-                let mut chmask: [bool; 16] = [false; 16];
-
-                for e in &resp {
-                    if (*e as isize) >= ch_mask_cntl * 16 && (*e as isize) < (ch_mask_cntl + 1) * 16
-                    {
-                        chmask[e % 16] = true;
-                    }
-                }
-
-                payloads.push(LinkADRReqPayload {
-                    dr: 0,
-                    tx_power: 0,
-                    ch_mask: ChMask::new(chmask),
-                    redundancy: Redundancy {
-                        ch_mask_cntl: ch_mask_cntl as u8,
-                        nb_rep: 0,
-                    },
-                });
-            }
         }
 
         let last = payloads.last_mut().unwrap();
