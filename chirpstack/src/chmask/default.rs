@@ -21,7 +21,7 @@ impl Handler for Algorithm {
         "default".to_string()
     }
 
-    async fn handle(&self, req: &Request) -> Result<Response> {
+    async fn _handle(&self, req: &Request) -> Result<Response> {
         Ok(req.dry_response())
     }
 }
@@ -65,8 +65,7 @@ mod test {
             device_variables: Default::default(),
         };
 
-        let Response(mut resp) = a.handle(&req).await.unwrap();
-        resp.sort_unstable();
+        let Response(resp) = a.handle(&req).await.unwrap();
         assert_eq!(vec![0, 1, 2], resp);
     }
 }

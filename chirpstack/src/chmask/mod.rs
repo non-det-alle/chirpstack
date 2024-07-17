@@ -51,9 +51,8 @@ pub async fn handle(algo_id: &str, req: &Request) -> Response {
     let algos = CHMASK_ALGORITHMS.read().await;
     match algos.get(algo_id) {
         Some(v) => match v.handle(req).await {
-            Ok(Response(mut v)) => {
+            Ok(Response(v)) => {
                 if v.iter().all(|i| req.uplink_channels.contains_key(i)) {
-                    v.sort_unstable();
                     Response(v)
                 } else {
                     warn!(algorithm_id = %algo_id, "ChannelMask algorithm returned unknown channel");
@@ -81,7 +80,14 @@ pub trait Handler {
     fn get_id(&self) -> String;
 
     // Handle the ChannelMask request.
-    async fn handle(&self, req: &Request) -> Result<Response>;
+    async fn _handle(&self, req: &Request) -> Result<Response>;
+
+    // Decorate the internal handle implementation
+    async fn handle(&self, req: &Request) -> Result<Response> {
+        let Response(mut resp) = self._handle(req).await?;
+        resp.sort_unstable();
+        Ok(Response(resp))
+    }
 }
 
 #[derive(Clone)]

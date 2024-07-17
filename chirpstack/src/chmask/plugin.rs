@@ -47,7 +47,7 @@ impl Handler for Plugin {
         self.id.clone()
     }
 
-    async fn handle(&self, req: &Request) -> Result<Response> {
+    async fn _handle(&self, req: &Request) -> Result<Response> {
         let rt = rquickjs::Runtime::new()?;
         let ctx = rquickjs::Context::full(&rt)?;
 
@@ -58,21 +58,14 @@ impl Handler for Plugin {
             m_promise.finish()?;
             let func: rquickjs::Function = m.get("handle").context("Get handle function")?;
 
-            let device_variables = rquickjs::Object::new(ctx.clone())?;
-            for (k, v) in &req.device_variables {
-                device_variables.set(k, v)?;
-            }
-
             let input = rquickjs::Object::new(ctx.clone())?;
             input.set("regionConfigId", req.region_config_id.clone())?;
             input.set("regionCommonName", req.region_common_name.to_string())?;
             input.set("devEui", req.dev_eui.to_string())?;
             input.set("macVersion", req.mac_version.to_string())?;
             input.set("regParamsRevision", req.reg_params_revision.to_string())?;
-            input.set("deviceVariables", device_variables)?;
 
-            let mut uplink_channels: HashMap<u32, rquickjs::Object> = HashMap::new();
-
+            let uplink_channels = rquickjs::Object::new(ctx.clone())?;
             for (k, v) in &req.uplink_channels {
                 let obj = rquickjs::Object::new(ctx.clone())?;
                 obj.set("frequency", v.frequency)?;
@@ -80,13 +73,11 @@ impl Handler for Plugin {
                 obj.set("maxDr", v.max_dr)?;
                 obj.set("enabled", v.enabled)?;
                 obj.set("userDefined", v.user_defined)?;
-                uplink_channels.insert(*k as u32, obj);
+                uplink_channels.set(*k as u32, obj)?;
             }
-
             input.set("uplinkChannels", uplink_channels)?;
 
             let mut uplink_history: Vec<rquickjs::Object> = Vec::new();
-
             for uh in &req.uplink_history {
                 let obj = rquickjs::Object::new(ctx.clone())?;
                 obj.set("fCnt", uh.f_cnt)?;
@@ -96,8 +87,13 @@ impl Handler for Plugin {
                 obj.set("gatewayCount", uh.gateway_count)?;
                 uplink_history.push(obj);
             }
-
             input.set("uplinkHistory", uplink_history)?;
+
+            let device_variables = rquickjs::Object::new(ctx.clone())?;
+            for (k, v) in &req.device_variables {
+                device_variables.set(k, v)?;
+            }
+            input.set("deviceVariables", device_variables)?;
 
             let res: Vec<usize> = func.call((input,)).context("Call handle function")?;
 
@@ -109,7 +105,10 @@ impl Handler for Plugin {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use lrwn::EUI64;
+    use lrwn::{
+        region::{eu868::Configuration, Region},
+        EUI64,
+    };
 
     #[tokio::test]
     async fn test_plugin() {
@@ -118,10 +117,17 @@ pub mod test {
         assert_eq!("Example plugin", p.get_name());
         assert_eq!("example_id", p.get_id());
 
-        let c = lrwn::region::Channel {
-            enabled: true,
-            ..Default::default()
-        };
+        let mut c = Configuration::new(false);
+        c.add_channel(867100000, 0, 5).unwrap();
+        c.add_channel(867300000, 0, 5).unwrap();
+        c.add_channel(867500000, 0, 5).unwrap();
+        c.add_channel(867700000, 0, 5).unwrap();
+        c.add_channel(867900000, 0, 5).unwrap();
+
+        let uplink_channels = c.get_device_uplink_channels(
+            &c.get_user_defined_uplink_channel_indices(),
+            &c.get_enabled_uplink_channel_indices(),
+        );
 
         let req = Request {
             region_config_id: "eu868".into(),
@@ -129,19 +135,12 @@ pub mod test {
             dev_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
             mac_version: lrwn::region::MacVersion::LORAWAN_1_0_3,
             reg_params_revision: lrwn::region::Revision::A,
-            uplink_channels: std::collections::HashMap::from([
-                (0, c.clone()),
-                (1, c.clone()),
-                (2, c.clone()),
-                (3, Default::default()),
-                (4, Default::default()),
-            ]),
+            uplink_channels,
             uplink_history: vec![],
             device_variables: Default::default(),
         };
 
-        let Response(mut resp) = p.handle(&req).await.unwrap();
-        resp.sort_unstable();
-        assert_eq!(vec![1, 3], resp);
+        let Response(resp) = p.handle(&req).await.unwrap();
+        assert_eq!(vec![0, 1, 2, 3, 4, 5, 6, 7], resp);
     }
 }
