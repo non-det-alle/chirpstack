@@ -1100,10 +1100,8 @@ impl Region for Configuration {
         device_extra_channel_indices: &[usize],
         device_enabled_channels: &[usize],
     ) -> HashMap<usize, Channel> {
-        self.base.get_device_uplink_channels(
-            device_extra_channel_indices,
-            device_enabled_channels,
-        )
+        self.base
+            .get_device_uplink_channels(device_extra_channel_indices, device_enabled_channels)
     }
 
     // Either use base function (diff-based payloads) or this (1 payload to turn off all channels, and queue payloads needed to turn on enabled channels) based on which produces less commands
