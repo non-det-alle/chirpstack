@@ -14,7 +14,10 @@ import {
 } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
 import { Region, MacVersion, RegParamsRevision } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
 import type { ListRegionsResponse, RegionListItem } from "@chirpstack/chirpstack-api-grpc-web/api/internal_pb";
-import type { ListDeviceProfileAdrAlgorithmsResponse } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
+import type {
+  ListDeviceProfileChmaskAlgorithmsResponse,
+  ListDeviceProfileAdrAlgorithmsResponse
+} from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
 import type {
   ListDeviceProfileTemplatesResponse,
   GetDeviceProfileTemplateResponse,
@@ -184,6 +187,7 @@ function DeviceProfileForm(props: IProps) {
   const [isRelay, setIsRelay] = useState<boolean>(false);
   const [isRelayEd, setIsRelayEd] = useState<boolean>(false);
   const [payloadCodecRuntime, setPayloadCodecRuntime] = useState<CodecRuntime>(CodecRuntime.NONE);
+  const [chmaskAlgorithms, setChmaskAlgorithms] = useState<[string, string][]>([]);
   const [adrAlgorithms, setAdrAlgorithms] = useState<[string, string][]>([]);
   const [regionConfigurations, setRegionConfigurations] = useState<RegionListItem[]>([]);
   const [regionConfigurationsFiltered, setRegionConfigurationsFiltered] = useState<[string, string][]>([]);
@@ -210,6 +214,15 @@ function DeviceProfileForm(props: IProps) {
       }
 
       setRegionConfigurationsFiltered(regionConfigurationsFiltered);
+    });
+
+    DeviceProfileStore.listChmaskAlgorithms((resp: ListDeviceProfileChmaskAlgorithmsResponse) => {
+      let chmaskAlgorithms: [string, string][] = [];
+      for (const a of resp.getResultList()) {
+        chmaskAlgorithms.push([a.getId(), a.getName()]);
+      }
+
+      setChmaskAlgorithms(chmaskAlgorithms);
     });
 
     DeviceProfileStore.listAdrAlgorithms((resp: ListDeviceProfileAdrAlgorithmsResponse) => {
@@ -239,6 +252,7 @@ function DeviceProfileForm(props: IProps) {
     dp.setRegionConfigId(v.regionConfigId);
     dp.setMacVersion(v.macVersion);
     dp.setRegParamsRevision(v.regParamsRevision);
+    dp.setChmaskAlgorithmId(v.chmaskAlgorithmId);
     dp.setAdrAlgorithmId(v.adrAlgorithmId);
     dp.setFlushQueueOnActivate(v.flushQueueOnActivate);
     dp.setUplinkInterval(v.uplinkInterval);
@@ -348,6 +362,7 @@ function DeviceProfileForm(props: IProps) {
       region: dp.getRegion(),
       macVersion: dp.getMacVersion(),
       regParamsRevision: dp.getRegParamsRevision(),
+      chamskAlgorithmId: dp.getChmaskAlgorithmId(),
       adrAlgorithmId: dp.getAdrAlgorithmId(),
       payloadCodecRuntime: dp.getPayloadCodecRuntime(),
       payloadCodecScript: dp.getPayloadCodecScript(),
@@ -394,6 +409,7 @@ function DeviceProfileForm(props: IProps) {
     });
   };
 
+  const chmaskOptions = chmaskAlgorithms.map(v => <Select.Option value={v[0]}>{v[1]}</Select.Option>);
   const adrOptions = adrAlgorithms.map(v => <Select.Option value={v[0]}>{v[1]}</Select.Option>);
   const regionConfigOptions = regionConfigurationsFiltered.map(v => <Select.Option value={v[0]}>{v[1]}</Select.Option>);
   const regionOptions = regionConfigurations
@@ -485,14 +501,28 @@ function DeviceProfileForm(props: IProps) {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item
-            label="ADR algorithm"
-            tooltip="The ADR algorithm that will be used for controlling the device data-rate."
-            name="adrAlgorithmId"
-            rules={[{ required: true, message: "Please select an ADR algorithm!" }]}
-          >
-            <Select disabled={props.disabled}>{adrOptions}</Select>
-          </Form.Item>
+          <Row gutter={24}>
+            <Col span={12}>
+              <Form.Item
+                label="ChMask algorithm"
+                tooltip="The ChMask algorithm that will be used for controlling the device channels."
+                name="chmaskAlgorithmId"
+                rules={[{ required: true, message: "Please select a ChMask algorithm!" }]}
+              >
+                <Select disabled={props.disabled}>{chmaskOptions}</Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="ADR algorithm"
+                tooltip="The ADR algorithm that will be used for controlling the device data-rate."
+                name="adrAlgorithmId"
+                rules={[{ required: true, message: "Please select an ADR algorithm!" }]}
+              >
+                <Select disabled={props.disabled}>{adrOptions}</Select>
+              </Form.Item>
+            </Col>
+          </Row>
           <Row gutter={24}>
             <Col span={12}>
               <Form.Item

@@ -74,6 +74,7 @@ pub struct DeviceProfile {
     pub relay_overall_limit_bucket_size: i16,
     pub allow_roaming: bool,
     pub rx1_delay: i16,
+    pub chmask_algorithm_id: String,
 }
 
 impl DeviceProfile {
@@ -104,6 +105,7 @@ impl Default for DeviceProfile {
             region: CommonName::EU868,
             mac_version: MacVersion::LORAWAN_1_0_0,
             reg_params_revision: Revision::A,
+            chmask_algorithm_id: "".into(),
             adr_algorithm_id: "".into(),
             payload_codec_runtime: Codec::NONE,
             payload_codec_script: "".into(),
@@ -235,6 +237,7 @@ pub async fn update(dp: DeviceProfile) -> Result<DeviceProfile, Error> {
             device_profile::region.eq(&dp.region),
             device_profile::mac_version.eq(&dp.mac_version),
             device_profile::reg_params_revision.eq(&dp.reg_params_revision),
+            device_profile::chmask_algorithm_id.eq(&dp.chmask_algorithm_id),
             device_profile::adr_algorithm_id.eq(&dp.adr_algorithm_id),
             device_profile::payload_codec_runtime.eq(&dp.payload_codec_runtime),
             device_profile::payload_codec_script.eq(&dp.payload_codec_script),
@@ -402,6 +405,7 @@ pub mod test {
             region: CommonName::EU868,
             mac_version: MacVersion::LORAWAN_1_0_2,
             reg_params_revision: Revision::B,
+            chmask_algorithm_id: "default".into(),
             adr_algorithm_id: "default".into(),
             payload_codec_runtime: Codec::JS,
             uplink_interval: 60,

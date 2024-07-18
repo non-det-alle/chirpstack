@@ -11,6 +11,7 @@ import type {
   DeleteDeviceProfileRequest,
   ListDeviceProfilesRequest,
   ListDeviceProfilesResponse,
+  ListDeviceProfileChmaskAlgorithmsResponse,
   ListDeviceProfileAdrAlgorithmsResponse,
 } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
 
@@ -86,6 +87,17 @@ class DeviceProfileStore extends EventEmitter {
 
   list = (req: ListDeviceProfilesRequest, callbackFunc: (resp: ListDeviceProfilesResponse) => void) => {
     this.client.list(req, SessionStore.getMetadata(), (err, resp) => {
+      if (err !== null) {
+        HandleError(err);
+        return;
+      }
+
+      callbackFunc(resp);
+    });
+  };
+
+  listChmaskAlgorithms = (callbackFunc: (resp: ListDeviceProfileChmaskAlgorithmsResponse) => void) => {
+    this.client.listChmaskAlgorithms(new google_protobuf_empty_pb.Empty(), SessionStore.getMetadata(), (err, resp) => {
       if (err !== null) {
         HandleError(err);
         return;

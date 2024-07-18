@@ -145,6 +145,14 @@ service DeviceProfileService {
       get : "/api/device-profiles/adr-algorithms"
     };
   }
+
+  // List available ChMask algorithms.
+  rpc ListChmaskAlgorithms(google.protobuf.Empty)
+      returns (ListDeviceProfileChmaskAlgorithmsResponse) {
+    option (google.api.http) = {
+      get : "/api/device-profiles/chmask-algorithms"
+    };
+  }
 }
 
 message DeviceProfile {
@@ -421,6 +429,9 @@ message DeviceProfile {
   // it.
   // Valid options are 1 - 15 (0 = always use system RX1 Delay).
   uint32 rx1_delay = 53;
+  
+  // ChMask algorithm ID.
+  string chmask_algorithm_id = 54;
 }
 
 message Measurement {
@@ -530,6 +541,22 @@ message ListDeviceProfileAdrAlgorithmsResponse {
 }
 
 message AdrAlgorithmListItem {
+  // Algorithm ID.
+  string id = 1;
+
+  // Algorithm name.
+  string name = 2;
+}
+
+message ListDeviceProfileChmaskAlgorithmsResponse {
+  // Total number of algorithms.
+  uint32 total_count = 1;
+
+  // Result-set.
+  repeated ChmaskAlgorithmListItem result = 2;
+}
+
+message ChmaskAlgorithmListItem {
   // Algorithm ID.
   string id = 1;
 

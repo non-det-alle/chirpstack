@@ -6,7 +6,10 @@ import { MinusCircleOutlined, PlusOutlined } from "@ant-design/icons";
 import { DeviceProfileTemplate } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_template_pb";
 import { CodecRuntime, Measurement, MeasurementKind } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
 import { Region, MacVersion, RegParamsRevision } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
-import type { ListDeviceProfileAdrAlgorithmsResponse } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
+import type {
+  ListDeviceProfileChmaskAlgorithmsResponse,
+  ListDeviceProfileAdrAlgorithmsResponse
+} from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
 
 import { onFinishFailed } from "../helpers";
 import DeviceProfileStore from "../../stores/DeviceProfileStore";
@@ -24,6 +27,7 @@ function DeviceProfileTemplateForm(props: IProps) {
   const [supportsClassB, setSupportsClassB] = useState<boolean>(false);
   const [supportsClassC, setSupportsClassC] = useState<boolean>(false);
   const [payloadCodecRuntime, setPayloadCodecRuntime] = useState<CodecRuntime>(CodecRuntime.NONE);
+  const [chmaskAlgorithms, setChmaskAlgorithms] = useState<[string, string][]>([]);
   const [adrAlgorithms, setAdrAlgorithms] = useState<[string, string][]>([]);
 
   useEffect(() => {
@@ -32,6 +36,15 @@ function DeviceProfileTemplateForm(props: IProps) {
     setSupportsClassB(v.getSupportsClassB());
     setSupportsClassC(v.getSupportsClassC());
     setPayloadCodecRuntime(v.getPayloadCodecRuntime());
+
+    DeviceProfileStore.listChmaskAlgorithms((resp: ListDeviceProfileChmaskAlgorithmsResponse) => {
+      let chmaskAlgorithms: [string, string][] = [];
+      for (const a of resp.getResultList()) {
+        chmaskAlgorithms.push([a.getId(), a.getName()]);
+      }
+
+      setChmaskAlgorithms(chmaskAlgorithms);
+    });
 
     DeviceProfileStore.listAdrAlgorithms((resp: ListDeviceProfileAdrAlgorithmsResponse) => {
       const adrAlgorithms: [string, string][] = [];
@@ -55,6 +68,7 @@ function DeviceProfileTemplateForm(props: IProps) {
     dp.setRegion(v.region);
     dp.setMacVersion(v.macVersion);
     dp.setRegParamsRevision(v.regParamsRevision);
+    dp.setChmaskAlgorithmId(v.chmaskAlgorithmId);
     dp.setAdrAlgorithmId(v.adrAlgorithmId);
     dp.setFlushQueueOnActivate(v.flushQueueOnActivate);
     dp.setUplinkInterval(v.uplinkInterval);
@@ -114,6 +128,8 @@ function DeviceProfileTemplateForm(props: IProps) {
   const onPayloadCodecRuntimeChange = (value: CodecRuntime) => {
     setPayloadCodecRuntime(value);
   };
+
+  const chmaskOptions = chmaskAlgorithms.map(v => <Select.Option value={v[0]}>{v[1]}</Select.Option>);
 
   const adrOptions = adrAlgorithms.map(v => <Select.Option value={v[0]}>{v[1]}</Select.Option>);
 
@@ -214,14 +230,28 @@ function DeviceProfileTemplateForm(props: IProps) {
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item
-            label="ADR algorithm"
-            tooltip="The ADR algorithm that will be used for controlling the device data-rate."
-            name="adrAlgorithmId"
-            rules={[{ required: true, message: "Please select an ADR algorithm!" }]}
-          >
-            <Select>{adrOptions}</Select>
-          </Form.Item>
+          <Row gutter={24}>
+            <Col span={12}>
+              <Form.Item
+                label="ChMask algorithm"
+                tooltip="The ChMask algorithm that will be used for controlling the device channels."
+                name="chmaskAlgorithmId"
+                rules={[{ required: true, message: "Please select a ChMask algorithm!" }]}
+              >
+                <Select>{chmaskOptions}</Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="ADR algorithm"
+                tooltip="The ADR algorithm that will be used for controlling the device data-rate."
+                name="adrAlgorithmId"
+                rules={[{ required: true, message: "Please select an ADR algorithm!" }]}
+              >
+                <Select>{adrOptions}</Select>
+              </Form.Item>
+            </Col>
+          </Row>
           <Row gutter={24}>
             <Col span={8}>
               <Form.Item

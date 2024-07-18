@@ -249,6 +249,7 @@ async fn import_device(
                         "RP001-1.1-RevB" => Revision::B,
                         _ => Revision::from_str(&prof.region_parameters_version)?,
                     },
+                    chmask_algorithm_id: "default".into(),
                     adr_algorithm_id: "default".into(),
                     payload_codec_runtime: match &codec {
                         None => Codec::NONE,

@@ -1,14 +1,14 @@
-// This must return the name of the CHMASK algorithm.
+// This must return the name of the ChMask algorithm.
 export function name() {
   return "Example plugin";
 }
 
-// This must return the id of the CHMASK algorithm.
+// This must return the id of the ChMask algorithm.
 export function id() {
   return "example_id";
 }
 
-// This handles the CHMASK request.
+// This handles the ChMask request.
 //
 // Input object example:
 // {

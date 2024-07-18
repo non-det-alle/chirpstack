@@ -4249,6 +4249,7 @@ async fn test_lorawan_10_adr() {
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_4,
         reg_params_revision: lrwn::region::Revision::RP002_1_0_3,
         supports_otaa: true,
+        chmask_algorithm_id: "default".into(),
         adr_algorithm_id: "default".into(),
         ..Default::default()
     })

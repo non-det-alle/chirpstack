@@ -1216,7 +1216,7 @@ impl Data {
         };
 
         let chmask::Response(enabled_uplink_channel_indices) =
-            chmask::handle("default", &req).await;
+            chmask::handle(&self.device_profile.chmask_algorithm_id, &req).await;
 
         // computes the diff between the enabled and device set to produce reconfig
         let mut payloads = self

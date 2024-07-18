@@ -10,8 +10,8 @@ use super::auth::validator;
 use super::error::ToStatus;
 use super::helpers;
 use super::helpers::{FromProto, ToProto};
-use crate::adr;
 use crate::storage::{device_profile, fields};
+use crate::{adr, chmask};
 
 pub struct DeviceProfile {
     validator: validator::RequestValidator,
@@ -51,6 +51,7 @@ impl DeviceProfileService for DeviceProfile {
             region: req_dp.region().from_proto(),
             mac_version: req_dp.mac_version().from_proto(),
             reg_params_revision: req_dp.reg_params_revision().from_proto(),
+            chmask_algorithm_id: req_dp.chmask_algorithm_id.clone(),
             adr_algorithm_id: req_dp.adr_algorithm_id.clone(),
             payload_codec_runtime: req_dp.payload_codec_runtime().from_proto(),
             payload_codec_script: req_dp.payload_codec_script.clone(),
@@ -155,6 +156,7 @@ impl DeviceProfileService for DeviceProfile {
                 region: dp.region.to_proto().into(),
                 mac_version: dp.mac_version.to_proto().into(),
                 reg_params_revision: dp.reg_params_revision.to_proto().into(),
+                chmask_algorithm_id: dp.chmask_algorithm_id,
                 adr_algorithm_id: dp.adr_algorithm_id,
                 payload_codec_runtime: dp.payload_codec_runtime.to_proto().into(),
                 payload_codec_script: dp.payload_codec_script,
@@ -253,6 +255,7 @@ impl DeviceProfileService for DeviceProfile {
             region: req_dp.region().from_proto(),
             mac_version: req_dp.mac_version().from_proto(),
             reg_params_revision: req_dp.reg_params_revision().from_proto(),
+            chmask_algorithm_id: req_dp.chmask_algorithm_id.clone(),
             adr_algorithm_id: req_dp.adr_algorithm_id.clone(),
             payload_codec_runtime: req_dp.payload_codec_runtime().from_proto(),
             payload_codec_script: req_dp.payload_codec_script.clone(),
@@ -407,6 +410,35 @@ impl DeviceProfileService for DeviceProfile {
         Ok(resp)
     }
 
+    async fn list_chmask_algorithms(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<api::ListDeviceProfileChmaskAlgorithmsResponse>, Status> {
+        self.validator
+            .validate(
+                request.extensions(),
+                validator::ValidateActiveUserOrKey::new(),
+            )
+            .await?;
+
+        let items = chmask::get_algorithms().await;
+        let mut result: Vec<api::ChmaskAlgorithmListItem> = items
+            .iter()
+            .map(|(k, v)| api::ChmaskAlgorithmListItem {
+                id: k.clone(),
+                name: v.clone(),
+            })
+            .collect();
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Ok(Response::new(
+            api::ListDeviceProfileChmaskAlgorithmsResponse {
+                total_count: items.len() as u32,
+                result,
+            },
+        ))
+    }
+
     async fn list_adr_algorithms(
         &self,
         request: Request<()>,
@@ -481,6 +513,7 @@ pub mod test {
                     region: common::Region::Eu868.into(),
                     mac_version: common::MacVersion::Lorawan103.into(),
                     reg_params_revision: common::RegParamsRevision::A.into(),
+                    chmask_algorithm_id: "default".into(),
                     adr_algorithm_id: "default".into(),
                     ..Default::default()
                 }),
@@ -505,6 +538,7 @@ pub mod test {
                 region: common::Region::Eu868.into(),
                 mac_version: common::MacVersion::Lorawan103.into(),
                 reg_params_revision: common::RegParamsRevision::A.into(),
+                chmask_algorithm_id: "default".into(),
                 adr_algorithm_id: "default".into(),
                 ..Default::default()
             }),
@@ -522,6 +556,7 @@ pub mod test {
                     region: common::Region::Us915.into(),
                     mac_version: common::MacVersion::Lorawan103.into(),
                     reg_params_revision: common::RegParamsRevision::A.into(),
+                    chmask_algorithm_id: "default".into(),
                     adr_algorithm_id: "default".into(),
                     ..Default::default()
                 }),
@@ -545,6 +580,7 @@ pub mod test {
                 region: common::Region::Us915.into(),
                 mac_version: common::MacVersion::Lorawan103.into(),
                 reg_params_revision: common::RegParamsRevision::A.into(),
+                chmask_algorithm_id: "default".into(),
                 adr_algorithm_id: "default".into(),
                 ..Default::default()
             }),
@@ -583,6 +619,17 @@ pub mod test {
         );
         let del_resp = service.delete(del_req).await;
         assert!(del_resp.is_err());
+
+        // list chmask algorithms
+        let list_chmask_algs_req = get_request(&u.id, ());
+        let list_chmask_algs_resp = service
+            .list_chmask_algorithms(list_chmask_algs_req)
+            .await
+            .unwrap();
+        let list_chmask_algs_resp = list_chmask_algs_resp.get_ref();
+        assert_eq!(1, list_chmask_algs_resp.total_count);
+        assert_eq!(1, list_chmask_algs_resp.result.len());
+        assert_eq!("default", list_chmask_algs_resp.result[0].id);
 
         // list adr algorithms
         let list_adr_algs_req = get_request(&u.id, ());

@@ -209,6 +209,17 @@ pub fn run() {
   # Mac-commands disabled.
   mac_commands_disabled={{ network.mac_commands_disabled }}
 
+  # Custom ChMask plugins.
+  #
+  # The custom ChMask plugin must be implemented in JavaScript. For an example
+  # skeleton, please see:
+  # /examples/chmask_plugins/plugin_skeleton.js
+  chmask_plugins=[
+    {{#each network.chmask_plugins}}
+    "{{this}}",
+    {{/each}}
+  ]
+
   # Custom ADR plugins.
   #
   # The custom ADR plugin must be implemented in JavaScript. For an example

@@ -50,6 +50,7 @@ impl DeviceProfileTemplateService for DeviceProfileTemplate {
             region: req_dp.region().from_proto(),
             mac_version: req_dp.mac_version().from_proto(),
             reg_params_revision: req_dp.reg_params_revision().from_proto(),
+            chmask_algorithm_id: req_dp.chmask_algorithm_id.clone(),
             adr_algorithm_id: req_dp.adr_algorithm_id.clone(),
             payload_codec_runtime: req_dp.payload_codec_runtime().from_proto(),
             payload_codec_script: req_dp.payload_codec_script.clone(),
@@ -122,6 +123,7 @@ impl DeviceProfileTemplateService for DeviceProfileTemplate {
                 region: dp.region.to_proto().into(),
                 mac_version: dp.mac_version.to_proto().into(),
                 reg_params_revision: dp.reg_params_revision.to_proto().into(),
+                chmask_algorithm_id: dp.chmask_algorithm_id,
                 adr_algorithm_id: dp.adr_algorithm_id,
                 payload_codec_runtime: dp.payload_codec_runtime.to_proto().into(),
                 payload_codec_script: dp.payload_codec_script,
@@ -191,6 +193,7 @@ impl DeviceProfileTemplateService for DeviceProfileTemplate {
             region: req_dp.region().from_proto(),
             mac_version: req_dp.mac_version().from_proto(),
             reg_params_revision: req_dp.reg_params_revision().from_proto(),
+            chmask_algorithm_id: req_dp.chmask_algorithm_id.clone(),
             adr_algorithm_id: req_dp.adr_algorithm_id.clone(),
             payload_codec_runtime: req_dp.payload_codec_runtime().from_proto(),
             payload_codec_script: req_dp.payload_codec_script.clone(),
@@ -337,6 +340,7 @@ pub mod test {
                     region: common::Region::Eu868.into(),
                     mac_version: common::MacVersion::Lorawan103.into(),
                     reg_params_revision: common::RegParamsRevision::A.into(),
+                    chmask_algorithm_id: "default".into(),
                     adr_algorithm_id: "default".into(),
                     ..Default::default()
                 }),
@@ -361,6 +365,7 @@ pub mod test {
                 region: common::Region::Eu868.into(),
                 mac_version: common::MacVersion::Lorawan103.into(),
                 reg_params_revision: common::RegParamsRevision::A.into(),
+                chmask_algorithm_id: "default".into(),
                 adr_algorithm_id: "default".into(),
                 ..Default::default()
             }),
@@ -379,6 +384,7 @@ pub mod test {
                     region: common::Region::Eu868.into(),
                     mac_version: common::MacVersion::Lorawan103.into(),
                     reg_params_revision: common::RegParamsRevision::A.into(),
+                    chmask_algorithm_id: "default".into(),
                     adr_algorithm_id: "default".into(),
                     ..Default::default()
                 }),
@@ -403,6 +409,7 @@ pub mod test {
                 region: common::Region::Eu868.into(),
                 mac_version: common::MacVersion::Lorawan103.into(),
                 reg_params_revision: common::RegParamsRevision::A.into(),
+                chmask_algorithm_id: "default".into(),
                 adr_algorithm_id: "default".into(),
                 ..Default::default()
             }),
