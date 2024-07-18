@@ -213,7 +213,7 @@ pub fn run() {
   #
   # The custom ChMask plugin must be implemented in JavaScript. For an example
   # skeleton, please see:
-  # /examples/chmask_plugins/plugin_skeleton.js
+  # https://github.com/non-det-alle/chirpstack/blob/channel-mask/examples/chmask_plugins/plugin_skeleton.js
   chmask_plugins=[
     {{#each network.chmask_plugins}}
     "{{this}}",
@@ -224,7 +224,7 @@ pub fn run() {
   #
   # The custom ADR plugin must be implemented in JavaScript. For an example
   # skeleton, please see:
-  # https://github.com/chirpstack/chirpstack/blob/master/examples/adr_plugins/plugin_skeleton.js
+  # https://github.com/non-det-alle/chirpstack/blob/channel-mask/examples/adr_plugins/plugin_skeleton.js
   adr_plugins=[
     {{#each network.adr_plugins}}
     "{{this}}",

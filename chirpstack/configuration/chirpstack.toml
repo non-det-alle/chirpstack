@@ -77,6 +77,13 @@
     "us915_1",
   ]
 
+  chmask_plugins=[
+    "../examples/chmask_plugins/plugin_skeleton.js"
+  ]
+
+  adr_plugins=[
+    "../examples/adr_plugins/plugin_skeleton.js"
+  ]
 
 # API interface configuration.
 [api]
