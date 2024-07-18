@@ -2,6 +2,7 @@ use std::fs;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use rquickjs::CatchResultExt;
 
 use super::{Handler, Request, Response};
 
@@ -18,8 +19,11 @@ impl Plugin {
         let script = fs::read_to_string(file_path).context("Read ChannelMask plugin")?;
 
         let (id, name) = ctx.with::<_, Result<(String, String)>>(|ctx| {
-            let m = rquickjs::Module::declare(ctx, "script", script.clone())
+            let m = rquickjs::Module::declare(ctx.clone(), "script", script.clone())
+                .catch(&ctx)
+                .map_err(|e| anyhow!("JS error: {}", e))
                 .context("Declare script")?;
+
             let (m, m_promise) = m.eval().context("Evaluate script")?;
             m_promise.finish()?;
             let id_func: rquickjs::Function = m.get("id").context("Get id function")?;
@@ -95,7 +99,11 @@ impl Handler for Plugin {
             }
             input.set("deviceVariables", device_variables)?;
 
-            let res: Vec<usize> = func.call((input,)).context("Call handle function")?;
+            let res: Vec<usize> = func
+                .call((input,))
+                .catch(&ctx)
+                .map_err(|e| anyhow!("JS error: {}", e))
+                .context("Call handle function")?;
 
             Ok(Response(res))
         })
