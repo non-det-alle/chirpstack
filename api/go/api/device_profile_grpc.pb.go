@@ -20,12 +20,13 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	DeviceProfileService_Create_FullMethodName            = "/api.DeviceProfileService/Create"
-	DeviceProfileService_Get_FullMethodName               = "/api.DeviceProfileService/Get"
-	DeviceProfileService_Update_FullMethodName            = "/api.DeviceProfileService/Update"
-	DeviceProfileService_Delete_FullMethodName            = "/api.DeviceProfileService/Delete"
-	DeviceProfileService_List_FullMethodName              = "/api.DeviceProfileService/List"
-	DeviceProfileService_ListAdrAlgorithms_FullMethodName = "/api.DeviceProfileService/ListAdrAlgorithms"
+	DeviceProfileService_Create_FullMethodName               = "/api.DeviceProfileService/Create"
+	DeviceProfileService_Get_FullMethodName                  = "/api.DeviceProfileService/Get"
+	DeviceProfileService_Update_FullMethodName               = "/api.DeviceProfileService/Update"
+	DeviceProfileService_Delete_FullMethodName               = "/api.DeviceProfileService/Delete"
+	DeviceProfileService_List_FullMethodName                 = "/api.DeviceProfileService/List"
+	DeviceProfileService_ListAdrAlgorithms_FullMethodName    = "/api.DeviceProfileService/ListAdrAlgorithms"
+	DeviceProfileService_ListChmaskAlgorithms_FullMethodName = "/api.DeviceProfileService/ListChmaskAlgorithms"
 )
 
 // DeviceProfileServiceClient is the client API for DeviceProfileService service.
@@ -44,6 +45,8 @@ type DeviceProfileServiceClient interface {
 	List(ctx context.Context, in *ListDeviceProfilesRequest, opts ...grpc.CallOption) (*ListDeviceProfilesResponse, error)
 	// List available ADR algorithms.
 	ListAdrAlgorithms(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListDeviceProfileAdrAlgorithmsResponse, error)
+	// List available ChMask algorithms.
+	ListChmaskAlgorithms(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListDeviceProfileChmaskAlgorithmsResponse, error)
 }
 
 type deviceProfileServiceClient struct {
@@ -108,6 +111,15 @@ func (c *deviceProfileServiceClient) ListAdrAlgorithms(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *deviceProfileServiceClient) ListChmaskAlgorithms(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*ListDeviceProfileChmaskAlgorithmsResponse, error) {
+	out := new(ListDeviceProfileChmaskAlgorithmsResponse)
+	err := c.cc.Invoke(ctx, DeviceProfileService_ListChmaskAlgorithms_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DeviceProfileServiceServer is the server API for DeviceProfileService service.
 // All implementations must embed UnimplementedDeviceProfileServiceServer
 // for forward compatibility
@@ -124,6 +136,8 @@ type DeviceProfileServiceServer interface {
 	List(context.Context, *ListDeviceProfilesRequest) (*ListDeviceProfilesResponse, error)
 	// List available ADR algorithms.
 	ListAdrAlgorithms(context.Context, *emptypb.Empty) (*ListDeviceProfileAdrAlgorithmsResponse, error)
+	// List available ChMask algorithms.
+	ListChmaskAlgorithms(context.Context, *emptypb.Empty) (*ListDeviceProfileChmaskAlgorithmsResponse, error)
 	mustEmbedUnimplementedDeviceProfileServiceServer()
 }
 
@@ -148,6 +162,9 @@ func (UnimplementedDeviceProfileServiceServer) List(context.Context, *ListDevice
 }
 func (UnimplementedDeviceProfileServiceServer) ListAdrAlgorithms(context.Context, *emptypb.Empty) (*ListDeviceProfileAdrAlgorithmsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListAdrAlgorithms not implemented")
+}
+func (UnimplementedDeviceProfileServiceServer) ListChmaskAlgorithms(context.Context, *emptypb.Empty) (*ListDeviceProfileChmaskAlgorithmsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListChmaskAlgorithms not implemented")
 }
 func (UnimplementedDeviceProfileServiceServer) mustEmbedUnimplementedDeviceProfileServiceServer() {}
 
@@ -270,6 +287,24 @@ func _DeviceProfileService_ListAdrAlgorithms_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DeviceProfileService_ListChmaskAlgorithms_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeviceProfileServiceServer).ListChmaskAlgorithms(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DeviceProfileService_ListChmaskAlgorithms_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeviceProfileServiceServer).ListChmaskAlgorithms(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DeviceProfileService_ServiceDesc is the grpc.ServiceDesc for DeviceProfileService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -300,6 +335,10 @@ var DeviceProfileService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAdrAlgorithms",
 			Handler:    _DeviceProfileService_ListAdrAlgorithms_Handler,
+		},
+		{
+			MethodName: "ListChmaskAlgorithms",
+			Handler:    _DeviceProfileService_ListChmaskAlgorithms_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

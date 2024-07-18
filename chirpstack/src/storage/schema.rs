@@ -144,6 +144,8 @@ diesel::table! {
         relay_overall_limit_bucket_size -> Int2,
         allow_roaming -> Bool,
         rx1_delay -> Int2,
+        #[max_length = 100]
+        chmask_algorithm_id -> Varchar,
     }
 }
 
@@ -188,6 +190,8 @@ diesel::table! {
         tags -> Jsonb,
         measurements -> Jsonb,
         auto_detect_measurements -> Bool,
+        #[max_length = 100]
+        chmask_algorithm_id -> Varchar,
     }
 }
 

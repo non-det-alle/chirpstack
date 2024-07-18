@@ -445,7 +445,7 @@ pub trait Region {
     ) -> HashMap<usize, Channel>;
 
     /// Returns the LinkADRReqPayloads to reconfigure the device to the current enabled channels.
-    /// Pay attention not to request activation to user-defined channels (e.g. CFList) not yet
+    /// Pay attention not to request activation of user-defined channels (e.g. CFList) not yet
     /// provisioned to the device (i.e. not acknowledged and added to device session).
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,

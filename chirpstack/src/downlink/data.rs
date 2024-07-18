@@ -1119,10 +1119,8 @@ impl Data {
         Ok(())
     }
 
-    // this (i) gests user_defined channels from config (a.k.a. extra_channels in .toml) and extra_channels in the device session,
-    // (ii) removes extra_channels in device session that are absent from configs (channel mask will then disable them),
-    // (iii) appends (at most 3) NewChannelReq for channels present/changed in configs but not in device session
-    // in summary, makes sure that the extra_channels registered in the device always mirror exactly the ones specified in the configs
+    // ensures that the extra_channels registered in the device always mirror exactly
+    // the ones specified in the configs
     async fn _request_custom_channel_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting custom channel re-configuration");
         let mut wanted_channels: HashMap<usize, lrwn::region::Channel> = HashMap::new();
@@ -1175,9 +1173,6 @@ impl Data {
     }
 
     // Note: this must come before ADR!
-    // this (i) gets enabled channels from device session,
-    // (ii) produces LinkADRReq payloads as per configs,
-    // (iii) appends LinkADRReq commands
     async fn _request_channel_mask_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting channel-mask reconfiguration");
         let ds = self.device.get_device_session()?;
