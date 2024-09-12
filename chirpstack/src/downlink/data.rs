@@ -2951,10 +2951,6 @@ mod test {
             // One LinkADRReq, no errors.
             Test {
                 device_session: internal::DeviceSession {
-                    mac_command_error_count: [(lrwn::CID::LinkADRReq.to_u8() as u32, 0)]
-                        .iter()
-                        .cloned()
-                        .collect(),
                     ..Default::default()
                 },
                 mac_commands: vec![lrwn::MACCommandSet::new(vec![
