@@ -709,6 +709,14 @@ impl Region for Configuration {
         self.base.get_cf_list(mac_version)
     }
 
+    fn get_device_uplink_channel_indices(
+        &self,
+        device_extra_channel_indices: &[usize],
+    ) -> Vec<usize> {
+        self.base
+            .get_device_uplink_channel_indices(device_extra_channel_indices)
+    }
+
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
@@ -847,6 +855,41 @@ mod tests {
             vec![3, 4, 5, 6, 7],
             config_with_user_channels().get_user_defined_uplink_channel_indices()
         );
+    }
+
+    #[test]
+    fn get_device_uplink_channel_indices() {
+        let c = config_with_user_channels();
+
+        struct Test {
+            device_extra_channel_indices: Vec<usize>,
+            expected_device_uplink_channel_indices: Vec<usize>,
+        }
+
+        let tests = vec![
+            // default only
+            Test {
+                device_extra_channel_indices: vec![],
+                expected_device_uplink_channel_indices: vec![0, 1, 2],
+            },
+            // all region extra channels
+            Test {
+                device_extra_channel_indices: vec![3, 4, 5, 6, 7],
+                expected_device_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],
+            },
+            // some extra + unknown channels
+            Test {
+                device_extra_channel_indices: vec![4, 7, 8, 9],
+                expected_device_uplink_channel_indices: vec![0, 1, 2, 4, 7],
+            },
+        ];
+
+        for tst in tests {
+            assert_eq!(
+                tst.expected_device_uplink_channel_indices,
+                c.get_device_uplink_channel_indices(&tst.device_extra_channel_indices)
+            );
+        }
     }
 
     #[test]

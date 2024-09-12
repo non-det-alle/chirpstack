@@ -782,6 +782,15 @@ impl Region for Configuration {
         self.base.get_cf_list(mac_version)
     }
 
+    fn get_device_uplink_channel_indices(
+        &self,
+        device_extra_channel_indices: &[usize],
+    ) -> Vec<usize> {
+        self.base
+            .get_device_uplink_channel_indices(device_extra_channel_indices)
+    }
+
+    // Either use base function (diff-based payloads) or this (1 payload to turn off all channels, and queue payloads needed to turn on enabled channels) based on which produces less commands
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],

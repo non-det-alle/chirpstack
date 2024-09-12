@@ -432,9 +432,18 @@ pub trait Region {
     /// are no extra channels, this method returns None.
     fn get_cf_list(&self, mac_version: MacVersion) -> Option<CFList>;
 
-    /// Returns the LinkADRReqPayloads to reconfigure the device to the current enabled channels.
-    /// Note that in case of activation, user-defined channels (e.g. CFList) will be ignored as it
-    /// is unknown if the device is aware of these extra frequencies.
+    /// Returns the set of uplink channel indices currently registered onto a device.
+    /// For a channel index to be returned it must currently be present and enabled in the region
+    /// network configuration, and either be a default channel for this region or be present in the
+    /// `device_extra_channel_indices` input vector.
+    fn get_device_uplink_channel_indices(
+        &self,
+        device_extra_channel_indices: &[usize],
+    ) -> Vec<usize>;
+
+    /// Returns the LinkADRReqPayloads to reconfigure the device to the provided enabled channels.
+    /// Pay attention not to request activation of user-defined channels (e.g. CFList) not yet
+    /// provisioned to the device (i.e. not acknowledged and added to device session).
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
@@ -752,6 +761,22 @@ impl RegionBaseConfig {
         Some(CFList::ChannelMask(CFListChannelMasks::new(masks)))
     }
 
+    fn get_device_uplink_channel_indices(
+        &self,
+        device_extra_channel_indices: &[usize],
+    ) -> Vec<usize> {
+        let device_extra_set: HashSet<usize> =
+            device_extra_channel_indices.iter().cloned().collect();
+        self.uplink_channels
+            .iter()
+            .enumerate()
+            .filter_map(|(i, uc)| {
+                (uc.enabled && (!uc.user_defined || device_extra_set.contains(&i))).then(|| i)
+            })
+            .collect()
+    }
+
+    // enable/disable channels to match the diff with requested configs
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
