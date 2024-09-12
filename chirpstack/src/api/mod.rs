@@ -29,6 +29,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 
 use chirpstack_api::api::application_service_server::ApplicationServiceServer;
+use chirpstack_api::api::device_config_store_service_server::DeviceConfigStoreServiceServer;
 use chirpstack_api::api::device_profile_service_server::DeviceProfileServiceServer;
 use chirpstack_api::api::device_profile_template_service_server::DeviceProfileTemplateServiceServer;
 use chirpstack_api::api::device_service_server::DeviceServiceServer;
@@ -50,6 +51,7 @@ pub mod application;
 pub mod auth;
 pub mod backend;
 pub mod device;
+pub mod device_config_store;
 pub mod device_profile;
 pub mod device_profile_template;
 pub mod error;
@@ -158,6 +160,10 @@ pub async fn setup() -> Result<()> {
         ))
         .add_service(DeviceServiceServer::with_interceptor(
             device::Device::new(validator::RequestValidator::new()),
+            auth::auth_interceptor,
+        ))
+        .add_service(DeviceConfigStoreServiceServer::with_interceptor(
+            device_config_store::DeviceConfigStore::new(validator::RequestValidator::new()),
             auth::auth_interceptor,
         ))
         .add_service(UserServiceServer::with_interceptor(

@@ -1430,6 +1430,99 @@ impl Validator for ValidateDeviceQueueAccess {
     }
 }
 
+pub struct ValidateDeviceConfigStoresAccess {
+    flag: Flag,
+    application_id: Uuid,
+}
+
+impl ValidateDeviceConfigStoresAccess {
+    pub fn new(flag: Flag, app_id: Uuid) -> Self {
+        ValidateDeviceConfigStoresAccess {
+            flag,
+            application_id: app_id,
+        }
+    }
+}
+
+#[async_trait]
+impl Validator for ValidateDeviceConfigStoresAccess {
+    async fn validate_user(&self, _: &Uuid) -> Result<i64, Error> {
+        // api key only
+        Ok(0)
+    }
+
+    async fn validate_key(&self, id: &Uuid) -> Result<i64, Error> {
+        let mut q = api_key::dsl::api_key
+            .select(dsl::count_star())
+            .filter(api_key::dsl::id.eq(id))
+            .into_boxed();
+
+        match self.flag {
+            // admin api key
+            // tenant api key
+            Flag::List => {
+                q = q.filter(api_key::dsl::is_admin.eq(true).or(dsl::exists(
+                    application::dsl::application.filter(
+                        application::dsl::id.eq(&self.application_id).and(
+                            api_key::dsl::tenant_id.eq(application::dsl::tenant_id.nullable()),
+                        ),
+                    ),
+                )));
+            }
+            _ => {
+                return Ok(0);
+            }
+        }
+
+        Ok(q.first(&mut get_async_db_conn().await?).await?)
+    }
+}
+
+pub struct ValidateDeviceConfigStoreAccess {
+    flag: Flag,
+    dev_eui: EUI64,
+}
+
+impl ValidateDeviceConfigStoreAccess {
+    pub fn new(flag: Flag, dev_eui: EUI64) -> Self {
+        ValidateDeviceConfigStoreAccess { flag, dev_eui }
+    }
+}
+
+#[async_trait]
+impl Validator for ValidateDeviceConfigStoreAccess {
+    async fn validate_user(&self, _: &Uuid) -> Result<i64, Error> {
+        // api key only
+        Ok(0)
+    }
+
+    async fn validate_key(&self, id: &Uuid) -> Result<i64, Error> {
+        let mut q = api_key::dsl::api_key
+            .select(dsl::count_star())
+            .filter(api_key::dsl::id.eq(id))
+            .into_boxed();
+
+        match self.flag {
+            // admin api key
+            // tenant api key
+            Flag::Create | Flag::Read | Flag::Update | Flag::Delete => {
+                q = q.filter(api_key::dsl::is_admin.eq(true).or(dsl::exists(
+                    device::dsl::device.inner_join(application::table).filter(
+                        device::dsl::dev_eui.eq(self.dev_eui).and(
+                            api_key::dsl::tenant_id.eq(application::dsl::tenant_id.nullable()),
+                        ),
+                    ),
+                )))
+            }
+            _ => {
+                return Ok(0);
+            }
+        }
+
+        Ok(q.first(&mut get_async_db_conn().await?).await?)
+    }
+}
+
 pub struct ValidateGatewaysAccess {
     flag: Flag,
     tenant_id: Uuid,
@@ -3726,6 +3819,121 @@ pub mod test {
                     ValidateDeviceQueueAccess::new(Flag::Create, dev.dev_eui),
                     ValidateDeviceQueueAccess::new(Flag::List, dev.dev_eui),
                     ValidateDeviceQueueAccess::new(Flag::Delete, dev.dev_eui),
+                ],
+                id: AuthID::Key(api_key_other_tenant.id),
+                ok: false,
+            },
+        ];
+        run_tests(tests).await;
+    }
+
+    #[tokio::test]
+    async fn device_config_store() {
+        let _guard = test::prepare().await;
+
+        let user_admin = user::User {
+            email: "admin@user".into(),
+            is_active: true,
+            is_admin: true,
+            ..Default::default()
+        };
+
+        user::create(user_admin.clone()).await.unwrap();
+
+        let api_key_admin = api_key::test::create_api_key(true, false).await;
+        let api_key_tenant = api_key::test::create_api_key(false, true).await;
+        let api_key_other_tenant = api_key::test::create_api_key(false, true).await;
+
+        let app =
+            application::test::create_application(Some(api_key_tenant.tenant_id.unwrap())).await;
+
+        let dp =
+            device_profile::test::create_device_profile(Some(api_key_tenant.tenant_id.unwrap()))
+                .await;
+        let dev = device::test::create_device(
+            EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
+            dp.id,
+            Some(app.id),
+        )
+        .await;
+
+        let tests = vec![
+            // users are never validated, this is API key only
+            ValidatorTest {
+                validators: vec![ValidateDeviceConfigStoresAccess::new(Flag::List, app.id)],
+                id: AuthID::User(user_admin.id),
+                ok: false,
+            },
+        ];
+        run_tests(tests).await;
+
+        let tests = vec![
+            // admin api key can list
+            ValidatorTest {
+                validators: vec![ValidateDeviceConfigStoresAccess::new(Flag::List, app.id)],
+                id: AuthID::Key(api_key_admin.id),
+                ok: true,
+            },
+            // tenant api key can list
+            ValidatorTest {
+                validators: vec![ValidateDeviceConfigStoresAccess::new(Flag::List, app.id)],
+                id: AuthID::Key(api_key_tenant.id),
+                ok: true,
+            },
+            // tenant api key cannot list for other tenant
+            ValidatorTest {
+                validators: vec![ValidateDeviceConfigStoresAccess::new(Flag::List, app.id)],
+                id: AuthID::Key(api_key_other_tenant.id),
+                ok: false,
+            },
+        ];
+        run_tests(tests).await;
+
+        let tests = vec![
+            // users are never validated, this is API key only
+            ValidatorTest {
+                validators: vec![
+                    ValidateDeviceConfigStoreAccess::new(Flag::Create, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Read, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Update, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Delete, dev.dev_eui),
+                ],
+                id: AuthID::User(user_admin.id),
+                ok: false,
+            },
+        ];
+        run_tests(tests).await;
+
+        let tests = vec![
+            // admin api key can create, read, update, and delete
+            ValidatorTest {
+                validators: vec![
+                    ValidateDeviceConfigStoreAccess::new(Flag::Create, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Read, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Update, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Delete, dev.dev_eui),
+                ],
+                id: AuthID::Key(api_key_admin.id),
+                ok: true,
+            },
+            // tenant api key can create, read, update, and delete
+            ValidatorTest {
+                validators: vec![
+                    ValidateDeviceConfigStoreAccess::new(Flag::Create, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Read, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Update, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Delete, dev.dev_eui),
+                ],
+                id: AuthID::Key(api_key_tenant.id),
+                ok: true,
+            },
+            // api key for other tenant cannot create, read, update, and delete
+            ValidatorTest {
+                validators: vec![
+                    ValidateDeviceConfigStoreAccess::new(Flag::Create, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Read, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Update, dev.dev_eui),
+                    ValidateDeviceConfigStoreAccess::new(Flag::Delete, dev.dev_eui),
                 ],
                 id: AuthID::Key(api_key_other_tenant.id),
                 ok: false,
