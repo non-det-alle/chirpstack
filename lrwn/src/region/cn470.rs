@@ -575,9 +575,15 @@ impl Region for Configuration {
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
+        device_extra_uplink_channels: &[usize],
+        custom_chmask_config: Option<&[usize]>,
     ) -> Vec<LinkADRReqPayload> {
         self.base
-            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(device_enabled_channels)
+            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                device_enabled_channels,
+                device_extra_uplink_channels,
+                custom_chmask_config,
+            )
     }
 
     fn get_enabled_uplink_channel_indices_for_link_adr_payloads(
@@ -743,8 +749,11 @@ mod tests {
                 c.disable_uplink_channel_index(*i).unwrap();
             }
 
-            let pls = c
-                .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(&tst.device_channels);
+            let pls = c.get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                &tst.device_channels,
+                &vec![],
+                None,
+            );
             assert_eq!(tst.expected_link_adr_req_payloads, pls);
 
             let channels = c

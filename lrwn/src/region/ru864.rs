@@ -453,9 +453,15 @@ impl Region for Configuration {
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
+        device_extra_uplink_channels: &[usize],
+        custom_chmask_config: Option<&[usize]>,
     ) -> Vec<LinkADRReqPayload> {
         self.base
-            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(device_enabled_channels)
+            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                device_enabled_channels,
+                device_extra_uplink_channels,
+                custom_chmask_config,
+            )
     }
 
     fn get_enabled_uplink_channel_indices_for_link_adr_payloads(
@@ -531,6 +537,7 @@ mod test {
     fn test_get_link_adr_req_payloads() {
         struct Test {
             device_channels: Vec<usize>,
+            extra_channels: Vec<usize>,
             disabled_channels: Vec<usize>,
             expected_uplink_channels: Vec<usize>,
             expected_link_adr_req_payloads: Vec<LinkADRReqPayload>,
@@ -541,6 +548,7 @@ mod test {
             // In this case we only activate the base channels
             Test {
                 device_channels: vec![],
+                extra_channels: vec![],
                 disabled_channels: vec![],
                 expected_uplink_channels: vec![0, 1],
                 expected_link_adr_req_payloads: vec![LinkADRReqPayload {
@@ -558,6 +566,7 @@ mod test {
             // now if the node knows about these frequencies
             Test {
                 device_channels: vec![0, 1],
+                extra_channels: vec![],
                 disabled_channels: vec![],
                 expected_uplink_channels: vec![0, 1],
                 expected_link_adr_req_payloads: vec![],
@@ -567,6 +576,7 @@ mod test {
             // now if the node knows about these frequencies
             Test {
                 device_channels: vec![0, 1, 2, 3],
+                extra_channels: vec![2, 3],
                 disabled_channels: vec![],
                 expected_uplink_channels: vec![0, 1, 2, 3],
                 expected_link_adr_req_payloads: vec![],
@@ -574,6 +584,7 @@ mod test {
             // Everything is in sync
             Test {
                 device_channels: vec![0, 1, 2, 3, 4, 5, 6],
+                extra_channels: vec![2, 3, 4, 5, 6],
                 disabled_channels: vec![],
                 expected_uplink_channels: vec![0, 1, 2, 3, 4, 5, 6],
                 expected_link_adr_req_payloads: vec![],
@@ -582,6 +593,7 @@ mod test {
             // but CFList channels are disabled on the network.
             Test {
                 device_channels: vec![0, 1, 2, 3, 4, 5, 6],
+                extra_channels: vec![2, 3, 4, 5, 6],
                 disabled_channels: vec![2, 3, 4, 5, 6],
                 expected_uplink_channels: vec![0, 1],
                 expected_link_adr_req_payloads: vec![LinkADRReqPayload {
@@ -604,6 +616,8 @@ mod test {
 
             let pls = c.get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
                 &test.device_channels,
+                &test.extra_channels,
+                None,
             );
             assert_eq!(test.expected_link_adr_req_payloads, pls);
 

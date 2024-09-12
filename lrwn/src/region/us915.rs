@@ -790,16 +790,34 @@ impl Region for Configuration {
             .get_device_uplink_channel_indices(device_extra_channel_indices)
     }
 
-    // Either use base function (diff-based payloads) or this (1 payload to turn off all channels, and queue payloads needed to turn on enabled channels) based on which produces less commands
+    // Either use base function (diff-based payloads) or this (1 payload to turn off all channels,
+    // and queue payloads needed to turn on enabled channels) based on which produces less commands
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
+        device_extra_uplink_channels: &[usize],
+        custom_chmask_config: Option<&[usize]>,
     ) -> Vec<LinkADRReqPayload> {
         let payloads_a = self
             .base
-            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(device_enabled_channels);
+            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                device_enabled_channels,
+                device_extra_uplink_channels,
+                custom_chmask_config,
+            );
 
-        let enabled_channels = self.get_enabled_uplink_channel_indices();
+        // valid == enabled in config (this region has no extra channels)
+        let enabled_channels = match custom_chmask_config {
+            // keep only valid wanted channels
+            Some(v) => self
+                .get_enabled_uplink_channel_indices()
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>()
+                .intersection(&v.iter().cloned().collect())
+                .cloned()
+                .collect(),
+            None => self.get_enabled_uplink_channel_indices(),
+        };
 
         let mut out = vec![LinkADRReqPayload {
             dr: 0,
@@ -1212,8 +1230,11 @@ pub mod test {
                 c.enable_uplink_channel_index(*i).unwrap();
             }
 
-            let pls = c
-                .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(&tst.device_channels);
+            let pls = c.get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                &tst.device_channels,
+                &vec![],
+                None,
+            );
             assert_eq!(tst.expected_link_adr_req_payloads, pls);
 
             let channels = c

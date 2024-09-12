@@ -441,12 +441,17 @@ pub trait Region {
         device_extra_channel_indices: &[usize],
     ) -> Vec<usize>;
 
-    /// Returns the LinkADRReqPayloads to reconfigure the device to the provided enabled channels.
-    /// Pay attention not to request activation of user-defined channels (e.g. CFList) not yet
-    /// provisioned to the device (i.e. not acknowledged and added to device session).
+    /// Returns the LinkADRReqPayloads to reconfigure a device to use the enabled uplink channels.
+    /// By default it activates all enabled channels in the regional configurations, but a smaller
+    /// subset can be specified using the `custom_chmask_config` parameter. Compares diffs with the
+    /// current `device_enabled_channels` to minimise the total commands to send. Requires the list
+    /// of extra channels tracked by the device session in order to skip activation of user-defined
+    /// channels not provisioned to the device.
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
+        device_extra_uplink_channels: &[usize],
+        custom_chmask_config: Option<&[usize]>,
     ) -> Vec<LinkADRReqPayload>;
 
     /// Returns the enabled uplink channel indices after applying the given LinkADRReqPayloads
@@ -776,32 +781,40 @@ impl RegionBaseConfig {
             .collect()
     }
 
-    // enable/disable channels to match the diff with requested configs
+    // produce commands to enable/disable channels matching the diff with requested device configs
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
+        device_extra_uplink_channels: &[usize],
+        custom_chmask_config: Option<&[usize]>,
     ) -> Vec<LinkADRReqPayload> {
-        let enabled_channels = self.get_enabled_uplink_channel_indices();
-        let device_set: HashSet<usize> = device_enabled_channels.iter().cloned().collect();
-        let enabled_set: HashSet<usize> = enabled_channels.iter().cloned().collect();
+        let enabled_channels: HashSet<usize> = {
+            // enabled in config && tracked in device session
+            let valid_enabled_channels: HashSet<usize> = self
+                .get_device_uplink_channel_indices(device_extra_uplink_channels)
+                .into_iter()
+                .collect();
 
-        // Get the diff between desided and actual channels.
+            match custom_chmask_config {
+                // keep only valid wanted channels
+                Some(v) => valid_enabled_channels
+                    .intersection(&v.iter().cloned().collect())
+                    .cloned()
+                    .collect(),
+                None => valid_enabled_channels,
+            }
+        };
+
+        // Get the diff between desired and actual channels.
         // This returns the channels that must be activated and / or de-activated
         // on the device.
-        let mut diff: Vec<usize> = enabled_set
-            .symmetric_difference(&device_set)
+        let mut diff: Vec<usize> = enabled_channels
+            .symmetric_difference(&device_enabled_channels.iter().cloned().collect())
             .cloned()
             .collect();
 
-        let mut filtered_diff: Vec<usize> = Vec::new();
-        for i in &diff {
-            if device_set.contains(i) || !self.uplink_channels[*i].user_defined {
-                filtered_diff.push(*i);
-            }
-        }
-
         // Nothing to do.
-        if diff.is_empty() || filtered_diff.is_empty() {
+        if diff.is_empty() {
             return vec![];
         }
 
@@ -820,13 +833,8 @@ impl RegionBaseConfig {
                 let mut chmask: [bool; 16] = [false; 16];
 
                 // Set enabled channels in this block to active
-                // note that we don't enable user defined channels (CFList) as
-                // we have no knowledge if the nodes has been provisioned with
-                // these frequencies.
                 for e in &enabled_channels {
-                    if (!self.uplink_channels[*e].user_defined || device_set.contains(e))
-                        && (*e as isize) >= ch_mask_cntl * 16
-                        && (*e as isize) < (ch_mask_cntl + 1) * 16
+                    if (*e as isize) >= ch_mask_cntl * 16 && (*e as isize) < (ch_mask_cntl + 1) * 16
                     {
                         chmask[e % 16] = true;
                     }

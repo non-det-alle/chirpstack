@@ -720,9 +720,15 @@ impl Region for Configuration {
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
         &self,
         device_enabled_channels: &[usize],
+        device_extra_uplink_channels: &[usize],
+        custom_chmask_config: Option<&[usize]>,
     ) -> Vec<LinkADRReqPayload> {
         self.base
-            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(device_enabled_channels)
+            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                device_enabled_channels,
+                device_extra_uplink_channels,
+                custom_chmask_config,
+            )
     }
 
     fn get_enabled_uplink_channel_indices_for_link_adr_payloads(
@@ -895,8 +901,10 @@ mod tests {
     #[test]
     fn get_link_adr_req_payloads_for_enabled_uplink_channel_indices() {
         struct Test {
-            device_channels: Vec<usize>,
-            disabled_channels: Vec<usize>,
+            network_disabled_channels: Vec<usize>,
+            device_extra_uplink_channels: Vec<usize>,
+            device_enabled_channels: Vec<usize>,
+            custom_chmask_config: Option<Vec<usize>>,
             expected_uplink_channels: Vec<usize>,
             expected_link_adr_req_payloads: Vec<LinkADRReqPayload>,
         }
@@ -905,8 +913,10 @@ mod tests {
             // No active channels.
             // Only activate the base channels
             Test {
-                device_channels: vec![],
-                disabled_channels: vec![],
+                network_disabled_channels: vec![],
+                device_extra_uplink_channels: vec![],
+                device_enabled_channels: vec![],
+                custom_chmask_config: None,
                 expected_uplink_channels: vec![0, 1, 2],
                 expected_link_adr_req_payloads: vec![LinkADRReqPayload {
                     dr: 0,
@@ -919,18 +929,41 @@ mod tests {
                 }],
             },
             // Base channels are active
-            // Do not activate the CFList channels as we don't now if the node knows about these frequencies.
+            // Do not activate the CFList channels as we don't know if the node knows about these
+            // frequencies.
             Test {
-                device_channels: vec![0, 1, 2],
-                disabled_channels: vec![],
+                network_disabled_channels: vec![],
+                device_extra_uplink_channels: vec![],
+                device_enabled_channels: vec![0, 1, 2],
+                custom_chmask_config: None,
                 expected_uplink_channels: vec![0, 1, 2],
                 expected_link_adr_req_payloads: vec![],
+            },
+            // Base channels are active, CFList channels are installed onto device but disabled.
+            // Activate CFList channels on the device.
+            Test {
+                network_disabled_channels: vec![],
+                device_extra_uplink_channels: vec![3, 4, 5, 6, 7],
+                device_enabled_channels: vec![0, 1, 2],
+                custom_chmask_config: None,
+                expected_uplink_channels: vec![0, 1, 2, 3, 4, 5, 6, 7],
+                expected_link_adr_req_payloads: vec![LinkADRReqPayload {
+                    dr: 0,
+                    tx_power: 0,
+                    redundancy: Redundancy {
+                        ch_mask_cntl: 0,
+                        nb_rep: 0,
+                    },
+                    ch_mask: ChMask::from_slice(&vec![true; 8]).unwrap(),
+                }],
             },
             // Base channels + two CFList channels are active
             // Nothing to do, network and device are in sync
             Test {
-                device_channels: vec![0, 1, 2, 3, 4],
-                disabled_channels: vec![],
+                network_disabled_channels: vec![],
+                device_extra_uplink_channels: vec![3, 4],
+                device_enabled_channels: vec![0, 1, 2, 3, 4],
+                custom_chmask_config: None,
                 expected_uplink_channels: vec![0, 1, 2, 3, 4],
                 expected_link_adr_req_payloads: vec![],
             },
@@ -938,8 +971,10 @@ mod tests {
             // network.
             // We disable the CFList channels as they became inactive.
             Test {
-                device_channels: vec![0, 1, 2, 3, 4, 5, 6, 7],
-                disabled_channels: vec![3, 4, 5, 6, 7],
+                network_disabled_channels: vec![3, 4, 5, 6, 7],
+                device_extra_uplink_channels: vec![3, 4, 5, 6, 7],
+                device_enabled_channels: vec![0, 1, 2, 3, 4, 5, 6, 7],
+                custom_chmask_config: None,
                 expected_uplink_channels: vec![0, 1, 2],
                 expected_link_adr_req_payloads: vec![LinkADRReqPayload {
                     dr: 0,
@@ -951,22 +986,45 @@ mod tests {
                     ch_mask: ChMask::from_slice(&[true, true, true]).unwrap(),
                 }],
             },
+            // Base channels + two CFList channels are active, a custom configuration is given.
+            // We reconfigure channels to new set, a mix of default and installed CFList channels.
+            Test {
+                network_disabled_channels: vec![6],
+                device_extra_uplink_channels: vec![3, 4, 6],
+                device_enabled_channels: vec![0, 1, 2, 3, 4, 5, 6, 7],
+                custom_chmask_config: Some(vec![0, 2, 4, 6, 7]),
+                expected_uplink_channels: vec![0, 2, 4],
+                expected_link_adr_req_payloads: vec![LinkADRReqPayload {
+                    dr: 0,
+                    tx_power: 0,
+                    redundancy: Redundancy {
+                        ch_mask_cntl: 0,
+                        nb_rep: 0,
+                    },
+                    ch_mask: ChMask::from_slice(&vec![
+                        true, false, true, false, true, false, false,
+                    ])
+                    .unwrap(),
+                }],
+            },
         ];
 
         for test in &tests {
             let mut c = config_with_user_channels();
-            for i in &test.disabled_channels {
+            for i in &test.network_disabled_channels {
                 c.disable_uplink_channel_index(*i).unwrap();
             }
 
             let pls = c.get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
-                &test.device_channels,
+                &test.device_enabled_channels,
+                &test.device_extra_uplink_channels,
+                test.custom_chmask_config.as_deref(),
             );
             assert_eq!(test.expected_link_adr_req_payloads, pls);
 
             let channels = c
                 .get_enabled_uplink_channel_indices_for_link_adr_payloads(
-                    &test.device_channels,
+                    &test.device_enabled_channels,
                     &pls,
                 )
                 .unwrap();
