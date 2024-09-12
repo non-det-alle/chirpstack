@@ -17,7 +17,7 @@ use crate::storage;
 use crate::storage::{
     application,
     device::{self, DeviceClass},
-    device_gateway, device_profile, device_queue, downlink_frame,
+    device_config_store, device_gateway, device_profile, device_queue, downlink_frame,
     helpers::get_all_device_data,
     mac_command, relay, tenant,
 };
@@ -38,6 +38,7 @@ pub struct Data {
     application: application::Application,
     device_profile: device_profile::DeviceProfile,
     device: device::Device,
+    device_config_store: Option<device_config_store::DeviceConfigStore>,
     network_conf: config::RegionNetwork,
     region_conf: Arc<Box<dyn lrwn::region::Region + Sync + Send>>,
     must_send: bool,
@@ -182,6 +183,17 @@ impl Data {
             )
         };
 
+        let device_config_store = match device_config_store::get(&device.dev_eui).await {
+            Ok(v) => Some(v),
+            Err(e) => {
+                if let storage::error::Error::NotFound(_) = e {
+                    None
+                } else {
+                    return Err(anyhow::Error::new(e));
+                }
+            }
+        };
+
         let mut ctx = Data {
             relay_context: None,
             uplink_frame_set: Some(ufs),
@@ -189,6 +201,7 @@ impl Data {
             application,
             device_profile,
             device,
+            device_config_store,
             network_conf,
             region_conf,
             must_send,
@@ -254,6 +267,17 @@ impl Data {
             )
         };
 
+        let device_config_store = match device_config_store::get(&device.dev_eui).await {
+            Ok(v) => Some(v),
+            Err(e) => {
+                if let storage::error::Error::NotFound(_) = e {
+                    None
+                } else {
+                    return Err(anyhow::Error::new(e));
+                }
+            }
+        };
+
         let mut ctx = Data {
             relay_context: Some(relay_ctx),
             uplink_frame_set: Some(ufs),
@@ -261,6 +285,7 @@ impl Data {
             application,
             device_profile,
             device,
+            device_config_store,
             network_conf,
             region_conf,
             must_send,
@@ -310,6 +335,17 @@ impl Data {
             )
         };
 
+        let dcs = match device_config_store::get(&dev.dev_eui).await {
+            Ok(v) => Some(v),
+            Err(e) => {
+                if let storage::error::Error::NotFound(_) = e {
+                    None
+                } else {
+                    return Err(anyhow::Error::new(e));
+                }
+            }
+        };
+
         let mut ctx = Data {
             relay_context: None,
             uplink_frame_set: None,
@@ -317,6 +353,7 @@ impl Data {
             application: app,
             device_profile: dp,
             device: dev,
+            device_config_store: dcs,
             network_conf: rn,
             region_conf: rc,
             must_send: false,
@@ -1118,6 +1155,8 @@ impl Data {
         Ok(())
     }
 
+    // ensures that the extra_channels registered in the device always mirror exactly
+    // the ones specified in the configs
     async fn _request_custom_channel_reconfiguration(&mut self) -> Result<()> {
         trace!("Requesting custom channel re-configuration");
         let mut wanted_channels: HashMap<usize, lrwn::region::Channel> = HashMap::new();
@@ -1174,17 +1213,43 @@ impl Data {
         trace!("Requesting channel-mask reconfiguration");
         let ds = self.device.get_device_session()?;
 
-        let enabled_uplink_channel_indices: Vec<usize> = ds
-            .enabled_uplink_channel_indices
-            .iter()
-            .map(|i| *i as usize)
-            .collect();
+        let mut payloads = {
+            // indices of enabled uplink channels from last LinkADRReq acknowledgement
+            let device_enabled_uplink_channel_indices: Vec<usize> = ds
+                .enabled_uplink_channel_indices
+                .iter()
+                .map(|i| *i as usize)
+                .collect();
 
-        let mut payloads = self
-            .region_conf
-            .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
-                &enabled_uplink_channel_indices,
-            );
+            // indices of extra channels the device has been provisioned with
+            // (new are added to dev session only once acknowledged in uplink pipeline)
+            // (once deleted from config are removed from dev session in previous step)
+            let device_extra_channel_indices: Vec<usize> = ds
+                .extra_uplink_channels
+                .keys()
+                .map(|i| *i as usize)
+                .collect();
+
+            // chmask_config from config store
+            let requested_uplink_channel_indices: Option<Vec<usize>> = self
+                .device_config_store
+                .as_ref()
+                .and_then(|dcs| dcs.chmask_config.as_ref())
+                .map(|cm| {
+                    cm.enabled_uplink_channel_indices
+                        .iter()
+                        .map(|i| *i as usize)
+                        .collect()
+                });
+
+            // computes the diff between the requested and device set to produce reconfig
+            self.region_conf
+                .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
+                    &device_enabled_uplink_channel_indices,
+                    &device_extra_channel_indices,
+                    requested_uplink_channel_indices.as_deref(),
+                )
+        };
 
         // Nothing to do.
         if payloads.is_empty() {
@@ -2888,6 +2953,7 @@ mod test {
                 application: app.clone(),
                 device_profile: dp.clone(),
                 device: d.clone(),
+                device_config_store: None,
                 network_conf: config::get_region_network("eu868").unwrap(),
                 region_conf: region::get("eu868").unwrap(),
                 must_send: false,
@@ -3445,6 +3511,7 @@ mod test {
                 application: app.clone(),
                 device_profile: dp_relay.clone(),
                 device: d_relay.clone(),
+                device_config_store: None,
                 network_conf: config::get_region_network("eu868").unwrap(),
                 region_conf: region::get("eu868").unwrap(),
                 must_send: false,
@@ -3894,6 +3961,7 @@ mod test {
                 application: app.clone(),
                 device_profile: dp_relay.clone(),
                 device: d_relay.clone(),
+                device_config_store: None,
                 network_conf: config::get_region_network("eu868").unwrap(),
                 region_conf: region::get("eu868").unwrap(),
                 must_send: false,
@@ -4014,6 +4082,7 @@ mod test {
                     device_session: Some(test.device_session.clone()),
                     ..Default::default()
                 },
+                device_config_store: None,
                 network_conf: config::get_region_network("eu868").unwrap(),
                 region_conf: region::get("eu868").unwrap(),
                 must_send: false,
@@ -4125,6 +4194,7 @@ mod test {
                     device_session: Some(test.device_session.clone()),
                     ..Default::default()
                 },
+                device_config_store: None,
                 network_conf: config::get_region_network("eu868").unwrap(),
                 region_conf: region::get("eu868").unwrap(),
                 must_send: false,
@@ -4246,6 +4316,7 @@ mod test {
                     device_session: Some(test.device_session.clone()),
                     ..Default::default()
                 },
+                device_config_store: None,
                 network_conf: config::get_region_network("eu868").unwrap(),
                 region_conf: region::get("eu868").unwrap(),
                 must_send: false,
@@ -4514,6 +4585,7 @@ mod test {
                 application: application::Application::default(),
                 device_profile: device_profile::DeviceProfile::default(),
                 device: d_relay.clone(),
+                device_config_store: None,
                 network_conf: config::get_region_network("eu868").unwrap(),
                 region_conf: region::get("eu868").unwrap(),
                 must_send: false,
