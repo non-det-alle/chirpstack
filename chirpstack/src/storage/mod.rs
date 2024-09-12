@@ -21,6 +21,7 @@ use crate::config;
 pub mod api_key;
 pub mod application;
 pub mod device;
+pub mod device_config_store;
 pub mod device_gateway;
 pub mod device_keys;
 pub mod device_profile;

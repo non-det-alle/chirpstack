@@ -187,12 +187,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // api
-    tonic_build::configure()
-        .out_dir(out_dir.join("api"))
-        .file_descriptor_set_path(out_dir.join("api").join("proto_descriptor.bin"))
-        .extern_path(".common", "crate::common")
-        .extern_path(".gw", "crate::gw")
-        .compile(
+    {
+        #[allow(unused_mut)]
+        let mut builder = tonic_build::configure()
+            .out_dir(out_dir.join("api"))
+            .file_descriptor_set_path(out_dir.join("api").join("proto_descriptor.bin"))
+            .extern_path(".common", "crate::common")
+            .extern_path(".gw", "crate::gw");
+
+        #[cfg(feature = "diesel")]
+        {
+            builder = builder.message_attribute("api.ChMaskConfig", "#[derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)] #[diesel(sql_type = diesel::sql_types::Binary)]");
+        }
+
+        builder.compile(
             &[
                 cs_dir.join("api").join("internal.proto").to_str().unwrap(),
                 cs_dir.join("api").join("user.proto").to_str().unwrap(),
@@ -231,6 +239,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 proto_dir.join("google").to_str().unwrap(),
             ],
         )?;
+    }
 
     Ok(())
 }
