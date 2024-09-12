@@ -69,6 +69,15 @@ diesel::table! {
 }
 
 diesel::table! {
+    device_config_store (dev_eui) {
+        dev_eui -> Bytea,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        chmask_config -> Nullable<Bytea>,
+    }
+}
+
+diesel::table! {
     device_keys (dev_eui) {
         dev_eui -> Bytea,
         created_at -> Timestamptz,
@@ -354,6 +363,7 @@ diesel::joinable!(application -> tenant (tenant_id));
 diesel::joinable!(application_integration -> application (application_id));
 diesel::joinable!(device -> application (application_id));
 diesel::joinable!(device -> device_profile (device_profile_id));
+diesel::joinable!(device_config_store -> device (dev_eui));
 diesel::joinable!(device_keys -> device (dev_eui));
 diesel::joinable!(device_profile -> tenant (tenant_id));
 diesel::joinable!(device_queue_item -> device (dev_eui));
@@ -374,6 +384,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     application,
     application_integration,
     device,
+    device_config_store,
     device_keys,
     device_profile,
     device_profile_template,
