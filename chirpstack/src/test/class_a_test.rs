@@ -8,10 +8,10 @@ use super::assert;
 use crate::storage::{
     application,
     device::{self, DeviceClass},
-    device_profile, device_queue, gateway, mac_command, reset_redis, tenant,
+    device_config_store, device_profile, device_queue, gateway, mac_command, reset_redis, tenant,
 };
 use crate::{config, gateway::backend as gateway_backend, integration, region, test, uplink};
-use chirpstack_api::{common, gw, integration as integration_pb, internal, stream};
+use chirpstack_api::{api, common, gw, integration as integration_pb, internal, stream};
 use lrwn::{AES128Key, DevAddr, EUI64};
 
 type Function = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
@@ -5767,6 +5767,362 @@ async fn test_lorawan_11_receive_window_selection() {
         ],
     })
     .await;
+}
+
+#[tokio::test]
+async fn test_lorawan_10_config_store() {
+    let _guard = test::prepare().await;
+
+    let t = tenant::create(tenant::Tenant {
+        name: "tenant".into(),
+        can_have_gateways: true,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let gw = gateway::create(gateway::Gateway {
+        name: "gateway".into(),
+        tenant_id: t.id,
+        gateway_id: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let app = application::create(application::Application {
+        name: "app".into(),
+        tenant_id: t.id,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let dp = device_profile::create(device_profile::DeviceProfile {
+        name: "dp".into(),
+        tenant_id: t.id,
+        region: lrwn::region::CommonName::EU868,
+        mac_version: lrwn::region::MacVersion::LORAWAN_1_0_4,
+        reg_params_revision: lrwn::region::Revision::RP002_1_0_3,
+        supports_otaa: true,
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let dev = device::create(device::Device {
+        name: "device".into(),
+        application_id: app.id,
+        device_profile_id: dp.id,
+        dev_eui: EUI64::from_be_bytes([2, 2, 3, 4, 5, 6, 7, 8]),
+        enabled_class: DeviceClass::A,
+        dev_addr: Some(DevAddr::from_be_bytes([1, 2, 3, 4])),
+        ..Default::default()
+    })
+    .await
+    .unwrap();
+
+    let mut rx_info = gw::UplinkRxInfo {
+        gateway_id: gw.gateway_id.to_string(),
+        location: Some(Default::default()),
+        ..Default::default()
+    };
+    rx_info
+        .metadata
+        .insert("region_config_id".to_string(), "eu868".to_string());
+    rx_info
+        .metadata
+        .insert("region_common_name".to_string(), "EU868".to_string());
+
+    let mut tx_info = gw::UplinkTxInfo {
+        frequency: 868100000,
+        ..Default::default()
+    };
+    uplink::helpers::set_uplink_modulation("eu868", &mut tx_info, 0).unwrap();
+
+    let ds = internal::DeviceSession {
+        mac_version: common::MacVersion::Lorawan104.into(),
+        dev_addr: vec![1, 2, 3, 4],
+        f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+        app_s_key: Some(common::KeyEnvelope {
+            kek_label: "".into(),
+            aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+        }),
+        f_cnt_up: 8,
+        n_f_cnt_down: 5,
+        enabled_uplink_channel_indices: vec![0, 1, 2],
+        rx1_delay: 1,
+        rx2_frequency: 869525000,
+        region_config_id: "eu868".into(),
+        ..Default::default()
+    };
+
+    let ds_7chan = internal::DeviceSession {
+        enabled_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],
+        ..ds.clone()
+    };
+
+    let up = lrwn::PhyPayload {
+        mhdr: lrwn::MHDR {
+            m_type: lrwn::MType::UnconfirmedDataUp,
+            major: lrwn::Major::LoRaWANR1,
+        },
+        payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
+            fhdr: lrwn::FHDR {
+                devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
+                f_cnt: 10,
+                ..Default::default()
+            },
+            f_port: Some(1),
+            frm_payload: Some(lrwn::FRMPayload::Raw(vec![1, 2, 3, 4])),
+        }),
+        mic: Some([104, 147, 35, 121]),
+    };
+
+    let tests = vec![
+        Test {
+            name: "config store aligned".into(),
+            dev_eui: dev.dev_eui,
+            device_queue_items: vec![],
+            before_func: Some(Box::new(move || {
+                let dev_eui = dev.dev_eui;
+                Box::pin(async move {
+                    device_config_store::create(device_config_store::DeviceConfigStore {
+                        dev_eui: dev_eui,
+                        chmask_config: Some(api::ChMaskConfig {
+                            enabled_uplink_channel_indices: vec![0, 1, 2],
+                        }),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                })
+            })),
+            after_func: Some(Box::new(move || {
+                let dev_eui = dev.dev_eui;
+                Box::pin(async move {
+                    device_config_store::delete(&dev_eui).await.unwrap();
+                })
+            })),
+            device_session: Some(ds.clone()),
+            tx_info: tx_info.clone(),
+            rx_info: rx_info.clone(),
+            phy_payload: up.clone(),
+            assert: vec![
+                assert::f_cnt_up(dev.dev_eui, 11),
+                assert::n_f_cnt_down(dev.dev_eui, 5),
+                assert::no_downlink_frame(),
+            ],
+        },
+        Test {
+            name: "trigger chmask configuration".into(),
+            dev_eui: dev.dev_eui,
+            device_queue_items: vec![],
+            before_func: Some(Box::new(move || {
+                let dev_eui = dev.dev_eui;
+                Box::pin(async move {
+                    device_config_store::create(device_config_store::DeviceConfigStore {
+                        dev_eui: dev_eui,
+                        chmask_config: Some(api::ChMaskConfig {
+                            enabled_uplink_channel_indices: vec![0, 2],
+                        }),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                })
+            })),
+            after_func: Some(Box::new(move || {
+                let dev_eui = dev.dev_eui;
+                Box::pin(async move {
+                    device_config_store::delete(&dev_eui).await.unwrap();
+                })
+            })),
+            device_session: Some(ds.clone()),
+            tx_info: tx_info.clone(),
+            rx_info: rx_info.clone(),
+            phy_payload: up.clone(),
+            assert: vec![
+                assert::f_cnt_up(dev.dev_eui, 11),
+                assert::n_f_cnt_down(dev.dev_eui, 5),
+                assert::downlink_phy_payloads_decoded_f_opts(vec![
+                    lrwn::PhyPayload {
+                        mhdr: lrwn::MHDR {
+                            m_type: lrwn::MType::UnconfirmedDataDown,
+                            major: lrwn::Major::LoRaWANR1,
+                        },
+                        payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
+                            fhdr: lrwn::FHDR {
+                                devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
+                                f_cnt: 5,
+                                f_ctrl: lrwn::FCtrl {
+                                    adr: true,
+                                    f_opts_len: 5,
+                                    ..Default::default()
+                                },
+                                f_opts: lrwn::MACCommandSet::new(vec![
+                                    lrwn::MACCommand::LinkADRReq(lrwn::LinkADRReqPayload {
+                                        dr: 0,
+                                        tx_power: 0,
+                                        ch_mask: lrwn::ChMask::from_slice(&[true, false, true])
+                                            .unwrap(),
+                                        redundancy: lrwn::Redundancy {
+                                            ch_mask_cntl: 0,
+                                            nb_rep: 0,
+                                        },
+                                    }),
+                                ]),
+                            },
+                            f_port: None,
+                            frm_payload: None,
+                        }),
+                        mic: Some([73, 60, 188, 166]),
+                    },
+                    lrwn::PhyPayload {
+                        mhdr: lrwn::MHDR {
+                            m_type: lrwn::MType::UnconfirmedDataDown,
+                            major: lrwn::Major::LoRaWANR1,
+                        },
+                        payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
+                            fhdr: lrwn::FHDR {
+                                devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
+                                f_cnt: 5,
+                                f_ctrl: lrwn::FCtrl {
+                                    adr: true,
+                                    f_opts_len: 5,
+                                    ..Default::default()
+                                },
+                                f_opts: lrwn::MACCommandSet::new(vec![
+                                    lrwn::MACCommand::LinkADRReq(lrwn::LinkADRReqPayload {
+                                        dr: 0,
+                                        tx_power: 0,
+                                        ch_mask: lrwn::ChMask::from_slice(&[true, false, true])
+                                            .unwrap(),
+                                        redundancy: lrwn::Redundancy {
+                                            ch_mask_cntl: 0,
+                                            nb_rep: 0,
+                                        },
+                                    }),
+                                ]),
+                            },
+                            f_port: None,
+                            frm_payload: None,
+                        }),
+                        mic: Some([73, 60, 188, 166]),
+                    },
+                ]),
+            ],
+        },
+        Test {
+            name: "ignore unknown channels".into(),
+            dev_eui: dev.dev_eui,
+            device_queue_items: vec![],
+            before_func: Some(Box::new(move || {
+                let dev_eui = dev.dev_eui;
+                Box::pin(async move {
+                    device_config_store::create(device_config_store::DeviceConfigStore {
+                        dev_eui: dev_eui,
+                        chmask_config: Some(api::ChMaskConfig {
+                            enabled_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],
+                        }),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                })
+            })),
+            after_func: Some(Box::new(move || {
+                let dev_eui = dev.dev_eui;
+                Box::pin(async move {
+                    device_config_store::delete(&dev_eui).await.unwrap();
+                })
+            })),
+            device_session: Some(ds_7chan.clone()),
+            tx_info: tx_info.clone(),
+            rx_info: rx_info.clone(),
+            phy_payload: up.clone(),
+            assert: vec![
+                assert::f_cnt_up(dev.dev_eui, 11),
+                assert::n_f_cnt_down(dev.dev_eui, 5),
+                assert::downlink_phy_payloads_decoded_f_opts(vec![
+                    lrwn::PhyPayload {
+                        mhdr: lrwn::MHDR {
+                            m_type: lrwn::MType::UnconfirmedDataDown,
+                            major: lrwn::Major::LoRaWANR1,
+                        },
+                        payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
+                            fhdr: lrwn::FHDR {
+                                devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
+                                f_cnt: 5,
+                                f_ctrl: lrwn::FCtrl {
+                                    adr: true,
+                                    f_opts_len: 5,
+                                    ..Default::default()
+                                },
+                                f_opts: lrwn::MACCommandSet::new(vec![
+                                    lrwn::MACCommand::LinkADRReq(lrwn::LinkADRReqPayload {
+                                        dr: 0,
+                                        tx_power: 0,
+                                        ch_mask: lrwn::ChMask::from_slice(&[
+                                            true, true, true, false, false, false, false, false,
+                                        ])
+                                        .unwrap(),
+                                        redundancy: lrwn::Redundancy {
+                                            ch_mask_cntl: 0,
+                                            nb_rep: 0,
+                                        },
+                                    }),
+                                ]),
+                            },
+                            f_port: None,
+                            frm_payload: None,
+                        }),
+                        mic: Some([8, 238, 221, 52]),
+                    },
+                    lrwn::PhyPayload {
+                        mhdr: lrwn::MHDR {
+                            m_type: lrwn::MType::UnconfirmedDataDown,
+                            major: lrwn::Major::LoRaWANR1,
+                        },
+                        payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
+                            fhdr: lrwn::FHDR {
+                                devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
+                                f_cnt: 5,
+                                f_ctrl: lrwn::FCtrl {
+                                    adr: true,
+                                    f_opts_len: 5,
+                                    ..Default::default()
+                                },
+                                f_opts: lrwn::MACCommandSet::new(vec![
+                                    lrwn::MACCommand::LinkADRReq(lrwn::LinkADRReqPayload {
+                                        dr: 0,
+                                        tx_power: 0,
+                                        ch_mask: lrwn::ChMask::from_slice(&[
+                                            true, true, true, false, false, false, false, false,
+                                        ])
+                                        .unwrap(),
+                                        redundancy: lrwn::Redundancy {
+                                            ch_mask_cntl: 0,
+                                            nb_rep: 0,
+                                        },
+                                    }),
+                                ]),
+                            },
+                            f_port: None,
+                            frm_payload: None,
+                        }),
+                        mic: Some([8, 238, 221, 52]),
+                    },
+                ]),
+            ],
+        },
+    ];
+
+    for tst in &tests {
+        run_test(tst).await;
+    }
 }
 
 async fn run_test(t: &Test) {
