@@ -25,6 +25,7 @@ api:
 	$(PROTOC_PATH) ${PROTOC_GRPC_ARGS} ../proto/api/device_profile.proto
 	$(PROTOC_PATH) ${PROTOC_GRPC_ARGS} ../proto/api/device_profile_template.proto
 	$(PROTOC_PATH) ${PROTOC_GRPC_ARGS} ../proto/api/device.proto
+	$(PROTOC_PATH) ${PROTOC_GRPC_ARGS} ../proto/api/device_config_store.proto
 	$(PROTOC_PATH) ${PROTOC_GRPC_ARGS} ../proto/api/gateway.proto
 	$(PROTOC_PATH) ${PROTOC_GRPC_ARGS} ../proto/api/multicast_group.proto
 	$(PROTOC_PATH) ${PROTOC_GRPC_ARGS} ../proto/api/relay.proto

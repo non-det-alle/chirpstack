@@ -22,6 +22,7 @@ api:
 	protoc ${PROTOC_ARGS} api/device_profile.proto
 	protoc ${PROTOC_ARGS} api/device_profile_template.proto
 	protoc ${PROTOC_ARGS} api/device.proto
+	protoc ${PROTOC_ARGS} api/device_config_store.proto
 	protoc ${PROTOC_ARGS} api/gateway.proto
 	protoc ${PROTOC_ARGS} api/multicast_group.proto
 	protoc ${PROTOC_ARGS} api/relay.proto

@@ -1,0 +1,199 @@
+syntax = "proto3";
+
+package api;
+
+option go_package = "github.com/chirpstack/chirpstack/api/go/v4/api";
+option java_package = "io.chirpstack.api";
+option java_multiple_files = true;
+option java_outer_classname = "DeviceConfigStoreProto";
+option csharp_namespace = "Chirpstack.Api";
+option php_namespace = "Chirpstack\\Api";
+option php_metadata_namespace = "GPBMetadata\\Chirpstack\\Api";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// DeviceConfigStoreService is the service providing API methods for managing
+// the configuration of radio parameters of devices.
+service DeviceConfigStoreService {
+    // Create configuration store for the device.
+    rpc Create(CreateDeviceConfigStoreRequest) returns (google.protobuf.Empty) {
+        option (google.api.http) = {
+            post : "/api/device_config_stores"
+            body : "*"
+        };
+    }
+
+    // Get returns the configuration store for the given DevEUI.
+    rpc Get(GetDeviceConfigStoreRequest)
+        returns (GetDeviceConfigStoreResponse) {
+        option (google.api.http) = {
+            get : "/api/device_config_stores/{dev_eui}"
+        };
+    }
+
+    // Update the configuration store for the given device.
+    rpc Update(UpdateDeviceConfigStoreRequest) returns (google.protobuf.Empty) {
+        option (google.api.http) = {
+            put : "/api/device_config_stores/{device_config_store.dev_eui}"
+            body : "*"
+        };
+    }
+
+    // Delete removes the configuration store for the device.
+    // Note: Configurations fall back to the regional default.
+    rpc Delete(DeleteDeviceConfigStoreRequest) returns (google.protobuf.Empty) {
+        option (google.api.http) = {
+            delete : "/api/device_config_stores/{dev_eui}"
+        };
+    }
+
+    // List DevEUIs of devices having configuration store.
+    rpc List(ListDeviceConfigStoresRequest)
+        returns (ListDeviceConfigStoresResponse) {
+        option (google.api.http) = {
+            get : "/api/device_config_stores"
+        };
+    }
+
+    // Returns the configuration alignment status for the given device (whether
+    // current configurations have been acknowledged by the device).
+    rpc GetConfigStoreAlignment(GetConfigStoreAlignmentRequest)
+        returns (GetConfigStoreAlignmentResponse) {
+        option (google.api.http) = {
+            get : "/api/device_config_stores/{dev_eui}/alignment"
+        };
+    }
+
+    // Get data on all uplink channels currently installed on the given device.
+    // Note: Includes their current activation status, possibly not yet aligned.
+    rpc GetAvailableUplinkChannels(GetAvailableChannelsRequest)
+        returns (GetAvailableChannelsResponse) {
+        option (google.api.http) = {
+            get : "/api/device_config_stores/{dev_eui}/usable_uplink_channels"
+        };
+    }
+}
+
+message ChMaskConfig {
+    // Enabled uplink channels.
+    repeated uint32 enabled_uplink_channel_indices = 1;
+}
+
+message DeviceConfigStore {
+    // Device EUI (EUI64).
+    string dev_eui = 1;
+
+    // ChMask configuration object.
+    ChMaskConfig chmask_config = 2;
+}
+
+message ConfigStoreAlignment {
+    // Alignment of the ChMask configuration
+    bool chmask_config = 1;
+}
+
+message DeviceConfigStoreListItem {
+    // Device EUI (EUI64).
+    string dev_eui = 1;
+
+    // Created at timestamp.
+    google.protobuf.Timestamp created_at = 2;
+
+    // Last update timestamp.
+    google.protobuf.Timestamp updated_at = 3;
+
+    // Device alignment status with the stored configuration.
+    ConfigStoreAlignment alignment = 4;
+}
+
+message DeviceUplinkChannel {
+    // Frequency Hz.
+    uint32 frequency = 1;
+
+    // Min. data-rate.
+    uint32 min_dr = 2;
+
+    // Max. data-rate.
+    uint32 max_dr = 3;
+
+    // Whether this channel is enabled on the device.
+    bool enabled = 4;
+
+    // Whether this channel is not among regional defaults.
+    bool user_defined = 5;
+}
+
+message CreateDeviceConfigStoreRequest {
+    // Object to create.
+    DeviceConfigStore device_config_store = 1;
+}
+
+message GetDeviceConfigStoreRequest {
+    // Device EUI (EUI64).
+    string dev_eui = 1;
+}
+
+message GetDeviceConfigStoreResponse {
+    // Device configuration store object.
+    DeviceConfigStore device_config_store = 1;
+
+    // Created at timestamp.
+    google.protobuf.Timestamp created_at = 2;
+
+    // Last update timestamp.
+    google.protobuf.Timestamp updated_at = 3;
+
+    // Device alignment status with the stored configuration.
+    ConfigStoreAlignment alignment = 4;
+}
+
+message UpdateDeviceConfigStoreRequest {
+    // Object to update.
+    DeviceConfigStore device_config_store = 1;
+}
+
+message DeleteDeviceConfigStoreRequest {
+    // Device EUI (EUI64).
+    string dev_eui = 1;
+}
+
+message ListDeviceConfigStoresRequest {
+    // Max number of chmasks to return in the result-set.
+    uint32 limit = 1;
+
+    // Offset in the result-set (for pagination).
+    uint32 offset = 2;
+
+    // Application ID (UUID) to filter devices on.
+    string application_id = 3;
+}
+
+message ListDeviceConfigStoresResponse {
+    // Total number of configuration stores.
+    uint32 total_count = 1;
+
+    // Result-set.
+    repeated DeviceConfigStoreListItem result = 2;
+}
+
+message GetConfigStoreAlignmentRequest {
+    // Device EUI (EUI64).
+    string dev_eui = 1;
+}
+
+message GetConfigStoreAlignmentResponse {
+    // Device alignment status with the stored configuration.
+    ConfigStoreAlignment alignment = 1;
+}
+
+message GetAvailableChannelsRequest {
+    // Device EUI (EUI64).
+    string dev_eui = 1;
+}
+
+message GetAvailableChannelsResponse {
+    // Available uplink channels.
+    map<uint32, DeviceUplinkChannel> channels = 1;
+}

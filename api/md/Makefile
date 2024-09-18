@@ -10,6 +10,7 @@ api:
 	protoc -I=../proto --doc_out=./api --doc_opt=markdown,api.md \
 		api/application.proto \
 		api/device.proto \
+		api/device_config_store.proto \
 		api/device_profile.proto \
 		api/device_profile_template.proto \
 		api/gateway.proto \

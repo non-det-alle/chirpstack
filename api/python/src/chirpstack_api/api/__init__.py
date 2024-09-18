@@ -2,6 +2,8 @@ from .application_pb2 import *
 from .application_pb2_grpc import *
 from .device_pb2 import *
 from .device_pb2_grpc import *
+from .device_config_store_pb2 import *
+from .device_config_store_pb2_grpc import *
 from .device_profile_pb2 import *
 from .device_profile_pb2_grpc import *
 from .device_profile_template_pb2 import *
