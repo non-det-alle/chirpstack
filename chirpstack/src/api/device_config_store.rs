@@ -77,10 +77,6 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             .await
             .map_err(|e| e.status())?;
 
-        let alignment = device_config_store::get_alignment(&dev_eui)
-            .await
-            .map_err(|e| e.status())?;
-
         Ok(Response::new(api::GetDeviceConfigStoreResponse {
             device_config_store: Some(api::DeviceConfigStore {
                 dev_eui: dcs.dev_eui.to_string(),
@@ -88,7 +84,6 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             }),
             created_at: Some(helpers::datetime_to_prost_timestamp(&dcs.created_at)),
             updated_at: Some(helpers::datetime_to_prost_timestamp(&dcs.updated_at)),
-            alignment,
         }))
     }
 
@@ -174,7 +169,6 @@ impl DeviceConfigStoreService for DeviceConfigStore {
                     dev_eui: dcs.dev_eui.to_string(),
                     created_at: Some(helpers::datetime_to_prost_timestamp(&dcs.created_at)),
                     updated_at: Some(helpers::datetime_to_prost_timestamp(&dcs.updated_at)),
-                    alignment: dcs.alignment,
                 })
                 .collect(),
         }))
@@ -195,9 +189,27 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             )
             .await?;
 
-        let alignment = device_config_store::get_alignment(&dev_eui)
-            .await
-            .map_err(|e| e.status())?;
+        let alignment = {
+            let dcs = device_config_store::get(&dev_eui)
+                .await
+                .map_err(|e| e.status())?;
+
+            let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
+
+            let ds = d.get_device_session().map_err(|_| {
+                Status::not_found(format!(
+                    "DeviceSession not found, missing Device activation? (id: {})",
+                    dev_eui.to_string()
+                ))
+            })?;
+
+            let chmask_config = match dcs.chmask_config {
+                Some(cm) => cm.enabled_uplink_channel_indices == ds.enabled_uplink_channel_indices,
+                None => true, // by default, chmask is considered aligned
+            };
+
+            Some(api::ConfigStoreAlignment { chmask_config })
+        };
 
         Ok(Response::new(api::GetConfigStoreAlignmentResponse {
             alignment,
@@ -220,13 +232,14 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             .await?;
 
         let channels = {
-            let ds = device::get(&dev_eui)
-                .await
-                .map_err(|e| e.status())?
-                .device_session
-                .ok_or(Status::not_found(
-                    "device_session not found, please activate the device first",
-                ))?;
+            let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
+
+            let ds = d.get_device_session().map_err(|_| {
+                Status::not_found(format!(
+                    "DeviceSession not found, missing Device activation? (id: {})",
+                    dev_eui.to_string()
+                ))
+            })?;
 
             let extra: Vec<usize> = ds
                 .extra_uplink_channels

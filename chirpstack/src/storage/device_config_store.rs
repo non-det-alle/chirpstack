@@ -5,7 +5,7 @@ use diesel_async::RunQueryDsl;
 use tracing::info;
 use uuid::Uuid;
 
-use chirpstack_api::{api, internal};
+use chirpstack_api::api;
 use lrwn::EUI64;
 
 use super::error::Error;
@@ -59,12 +59,11 @@ impl Default for DeviceConfigStore {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Queryable, PartialEq, Eq, Debug)]
 pub struct DeviceConfigStoreListItem {
     pub dev_eui: EUI64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub alignment: Option<api::ConfigStoreAlignment>,
 }
 
 pub async fn create(mut dcs: DeviceConfigStore) -> Result<DeviceConfigStore, Error> {
@@ -132,12 +131,6 @@ pub async fn get_count(application_id: &Option<Uuid>) -> Result<i64, Error> {
     Ok(q.first(&mut get_async_db_conn().await?).await?)
 }
 
-#[derive(Queryable)]
-struct DeviceConfigStoreSession {
-    device_config_store: DeviceConfigStore,
-    device_session: Option<internal::DeviceSession>,
-}
-
 pub async fn list(
     limit: i64,
     offset: i64,
@@ -146,8 +139,9 @@ pub async fn list(
     let mut q = device_config_store::dsl::device_config_store
         .inner_join(device::table)
         .select((
-            device_config_store::all_columns,
-            device::dsl::device_session,
+            device_config_store::dev_eui,
+            device_config_store::created_at,
+            device_config_store::updated_at,
         ))
         .distinct()
         .into_boxed();
@@ -156,56 +150,12 @@ pub async fn list(
         q = q.filter(device::dsl::application_id.eq(application_id));
     }
 
-    let dcs_dss: Vec<DeviceConfigStoreSession> = q
+    q.order_by(device_config_store::dsl::dev_eui)
         .limit(limit)
         .offset(offset)
         .load(&mut get_async_db_conn().await?)
         .await
-        .map_err(|e| Error::from_diesel(e, "".into()))?;
-
-    let items = dcs_dss
-        .iter()
-        .map(|dcs_ds| DeviceConfigStoreListItem {
-            dev_eui: dcs_ds.device_config_store.dev_eui,
-            created_at: dcs_ds.device_config_store.created_at,
-            updated_at: dcs_ds.device_config_store.updated_at,
-            alignment: dcs_ds
-                .device_session
-                .as_ref()
-                .map(|ds| api::ConfigStoreAlignment {
-                    chmask_config: match dcs_ds.device_config_store.chmask_config.as_ref() {
-                        Some(cm) => {
-                            cm.enabled_uplink_channel_indices == ds.enabled_uplink_channel_indices
-                        }
-                        None => true,
-                    },
-                }),
-        })
-        .collect();
-
-    Ok(items)
-}
-
-pub async fn get_alignment(dev_eui: &EUI64) -> Result<Option<api::ConfigStoreAlignment>, Error> {
-    let dcs_ds: DeviceConfigStoreSession = device_config_store::dsl::device_config_store
-        .find(&dev_eui)
-        .inner_join(device::table)
-        .select((
-            device_config_store::all_columns,
-            device::dsl::device_session,
-        ))
-        .first(&mut get_async_db_conn().await?)
-        .await
-        .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
-
-    let alignment = dcs_ds.device_session.map(|ds| api::ConfigStoreAlignment {
-        chmask_config: match dcs_ds.device_config_store.chmask_config {
-            Some(cm) => cm.enabled_uplink_channel_indices == ds.enabled_uplink_channel_indices,
-            None => true,
-        },
-    });
-
-    Ok(alignment)
+        .map_err(|e| Error::from_diesel(e, "".into()))
 }
 
 #[cfg(test)]
@@ -213,6 +163,7 @@ pub mod test {
     use super::*;
     use crate::storage;
     use crate::test;
+    use chirpstack_api::internal;
 
     struct FilterTest<'a> {
         application_id: Option<Uuid>,
@@ -287,10 +238,6 @@ pub mod test {
         let dcs_get = get(&d.dev_eui).await.unwrap();
         assert_eq!(dcs, dcs_get);
 
-        // aligned
-        let align = get_alignment(&d.dev_eui).await.unwrap().unwrap();
-        assert!(align.chmask_config);
-
         // update
         dcs.chmask_config = Some(api::ChMaskConfig {
             enabled_uplink_channel_indices: vec![0, 1, 2, 3],
@@ -298,10 +245,6 @@ pub mod test {
         dcs = update(dcs).await.unwrap();
         let dcs_get = get(&d.dev_eui).await.unwrap();
         assert_eq!(dcs, dcs_get);
-
-        // not aligned
-        let align = get_alignment(&d.dev_eui).await.unwrap().unwrap();
-        assert!(!align.chmask_config);
 
         // get count and list
         let tests = vec![
