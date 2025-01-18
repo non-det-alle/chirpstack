@@ -103,9 +103,6 @@ message DeviceConfigStoreListItem {
 
     // Last update timestamp.
     google.protobuf.Timestamp updated_at = 3;
-
-    // Device alignment status with the stored configuration.
-    ConfigStoreAlignment alignment = 4;
 }
 
 message DeviceUplinkChannel {
@@ -144,9 +141,6 @@ message GetDeviceConfigStoreResponse {
 
     // Last update timestamp.
     google.protobuf.Timestamp updated_at = 3;
-
-    // Device alignment status with the stored configuration.
-    ConfigStoreAlignment alignment = 4;
 }
 
 message UpdateDeviceConfigStoreRequest {
