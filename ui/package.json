@@ -1,6 +1,6 @@
 {
   "name": "chirpstack-ui",
-  "version": "4.9.0+cs.2-test.2",
+  "version": "4.9.0+cs.2",
   "private": true,
   "type": "module",
   "scripts": {
