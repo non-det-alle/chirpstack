@@ -20,9 +20,8 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	DeviceConfigStoreService_Create_FullMethodName                     = "/api.DeviceConfigStoreService/Create"
+	DeviceConfigStoreService_Set_FullMethodName                        = "/api.DeviceConfigStoreService/Set"
 	DeviceConfigStoreService_Get_FullMethodName                        = "/api.DeviceConfigStoreService/Get"
-	DeviceConfigStoreService_Update_FullMethodName                     = "/api.DeviceConfigStoreService/Update"
 	DeviceConfigStoreService_Delete_FullMethodName                     = "/api.DeviceConfigStoreService/Delete"
 	DeviceConfigStoreService_List_FullMethodName                       = "/api.DeviceConfigStoreService/List"
 	DeviceConfigStoreService_GetConfigStoreAlignment_FullMethodName    = "/api.DeviceConfigStoreService/GetConfigStoreAlignment"
@@ -33,12 +32,10 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DeviceConfigStoreServiceClient interface {
-	// Create configuration store for the device.
-	Create(ctx context.Context, in *CreateDeviceConfigStoreRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Set configuration store for the device (i.e., Upsert).
+	Set(ctx context.Context, in *SetDeviceConfigStoreRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Get returns the configuration store for the given DevEUI.
 	Get(ctx context.Context, in *GetDeviceConfigStoreRequest, opts ...grpc.CallOption) (*GetDeviceConfigStoreResponse, error)
-	// Update the configuration store for the given device.
-	Update(ctx context.Context, in *UpdateDeviceConfigStoreRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Delete removes the configuration store for the device.
 	// Note: Configurations fall back to the regional default.
 	Delete(ctx context.Context, in *DeleteDeviceConfigStoreRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -60,9 +57,9 @@ func NewDeviceConfigStoreServiceClient(cc grpc.ClientConnInterface) DeviceConfig
 	return &deviceConfigStoreServiceClient{cc}
 }
 
-func (c *deviceConfigStoreServiceClient) Create(ctx context.Context, in *CreateDeviceConfigStoreRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *deviceConfigStoreServiceClient) Set(ctx context.Context, in *SetDeviceConfigStoreRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, DeviceConfigStoreService_Create_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, DeviceConfigStoreService_Set_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -72,15 +69,6 @@ func (c *deviceConfigStoreServiceClient) Create(ctx context.Context, in *CreateD
 func (c *deviceConfigStoreServiceClient) Get(ctx context.Context, in *GetDeviceConfigStoreRequest, opts ...grpc.CallOption) (*GetDeviceConfigStoreResponse, error) {
 	out := new(GetDeviceConfigStoreResponse)
 	err := c.cc.Invoke(ctx, DeviceConfigStoreService_Get_FullMethodName, in, out, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *deviceConfigStoreServiceClient) Update(ctx context.Context, in *UpdateDeviceConfigStoreRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
-	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, DeviceConfigStoreService_Update_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -127,12 +115,10 @@ func (c *deviceConfigStoreServiceClient) GetAvailableUplinkChannels(ctx context.
 // All implementations must embed UnimplementedDeviceConfigStoreServiceServer
 // for forward compatibility
 type DeviceConfigStoreServiceServer interface {
-	// Create configuration store for the device.
-	Create(context.Context, *CreateDeviceConfigStoreRequest) (*emptypb.Empty, error)
+	// Set configuration store for the device (i.e., Upsert).
+	Set(context.Context, *SetDeviceConfigStoreRequest) (*emptypb.Empty, error)
 	// Get returns the configuration store for the given DevEUI.
 	Get(context.Context, *GetDeviceConfigStoreRequest) (*GetDeviceConfigStoreResponse, error)
-	// Update the configuration store for the given device.
-	Update(context.Context, *UpdateDeviceConfigStoreRequest) (*emptypb.Empty, error)
 	// Delete removes the configuration store for the device.
 	// Note: Configurations fall back to the regional default.
 	Delete(context.Context, *DeleteDeviceConfigStoreRequest) (*emptypb.Empty, error)
@@ -151,14 +137,11 @@ type DeviceConfigStoreServiceServer interface {
 type UnimplementedDeviceConfigStoreServiceServer struct {
 }
 
-func (UnimplementedDeviceConfigStoreServiceServer) Create(context.Context, *CreateDeviceConfigStoreRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Create not implemented")
+func (UnimplementedDeviceConfigStoreServiceServer) Set(context.Context, *SetDeviceConfigStoreRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Set not implemented")
 }
 func (UnimplementedDeviceConfigStoreServiceServer) Get(context.Context, *GetDeviceConfigStoreRequest) (*GetDeviceConfigStoreResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Get not implemented")
-}
-func (UnimplementedDeviceConfigStoreServiceServer) Update(context.Context, *UpdateDeviceConfigStoreRequest) (*emptypb.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Update not implemented")
 }
 func (UnimplementedDeviceConfigStoreServiceServer) Delete(context.Context, *DeleteDeviceConfigStoreRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
@@ -186,20 +169,20 @@ func RegisterDeviceConfigStoreServiceServer(s grpc.ServiceRegistrar, srv DeviceC
 	s.RegisterService(&DeviceConfigStoreService_ServiceDesc, srv)
 }
 
-func _DeviceConfigStoreService_Create_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateDeviceConfigStoreRequest)
+func _DeviceConfigStoreService_Set_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetDeviceConfigStoreRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(DeviceConfigStoreServiceServer).Create(ctx, in)
+		return srv.(DeviceConfigStoreServiceServer).Set(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: DeviceConfigStoreService_Create_FullMethodName,
+		FullMethod: DeviceConfigStoreService_Set_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DeviceConfigStoreServiceServer).Create(ctx, req.(*CreateDeviceConfigStoreRequest))
+		return srv.(DeviceConfigStoreServiceServer).Set(ctx, req.(*SetDeviceConfigStoreRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -218,24 +201,6 @@ func _DeviceConfigStoreService_Get_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DeviceConfigStoreServiceServer).Get(ctx, req.(*GetDeviceConfigStoreRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DeviceConfigStoreService_Update_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateDeviceConfigStoreRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DeviceConfigStoreServiceServer).Update(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DeviceConfigStoreService_Update_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DeviceConfigStoreServiceServer).Update(ctx, req.(*UpdateDeviceConfigStoreRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -320,16 +285,12 @@ var DeviceConfigStoreService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*DeviceConfigStoreServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Create",
-			Handler:    _DeviceConfigStoreService_Create_Handler,
+			MethodName: "Set",
+			Handler:    _DeviceConfigStoreService_Set_Handler,
 		},
 		{
 			MethodName: "Get",
 			Handler:    _DeviceConfigStoreService_Get_Handler,
-		},
-		{
-			MethodName: "Update",
-			Handler:    _DeviceConfigStoreService_Update_Handler,
 		},
 		{
 			MethodName: "Delete",
