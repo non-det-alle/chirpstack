@@ -11,7 +11,7 @@ use super::auth::validator;
 use super::error::ToStatus;
 use super::helpers;
 use crate::region;
-use crate::storage::{device, device_config_store};
+use crate::storage::{self, device_config_store};
 
 pub struct DeviceConfigStore {
     validator: validator::RequestValidator,
@@ -25,9 +25,9 @@ impl DeviceConfigStore {
 
 #[tonic::async_trait]
 impl DeviceConfigStoreService for DeviceConfigStore {
-    async fn create(
+    async fn set(
         &self,
-        request: Request<api::CreateDeviceConfigStoreRequest>,
+        request: Request<api::SetDeviceConfigStoreRequest>,
     ) -> Result<Response<()>, Status> {
         let req_dcs = match &request.get_ref().device_config_store {
             Some(v) => v,
@@ -41,19 +41,18 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         self.validator
             .validate(
                 request.extensions(),
-                validator::ValidateDeviceConfigStoreAccess::new(validator::Flag::Create, dev_eui),
+                validator::ValidateDeviceConfigStoreAccess::new(validator::Flag::Update, dev_eui),
             )
             .await?;
 
-        let dcs = device_config_store::DeviceConfigStore {
+        // upsert
+        let _ = device_config_store::upsert(device_config_store::DeviceConfigStore {
             dev_eui,
             chmask_config: req_dcs.chmask_config.clone(),
             ..Default::default()
-        };
-
-        let _ = device_config_store::create(dcs)
-            .await
-            .map_err(|e| e.status())?;
+        })
+        .await
+        .map_err(|e| e.status())?;
 
         Ok(Response::new(()))
     }
@@ -85,38 +84,6 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             created_at: Some(helpers::datetime_to_prost_timestamp(&dcs.created_at)),
             updated_at: Some(helpers::datetime_to_prost_timestamp(&dcs.updated_at)),
         }))
-    }
-
-    async fn update(
-        &self,
-        request: Request<api::UpdateDeviceConfigStoreRequest>,
-    ) -> Result<Response<()>, Status> {
-        let req_dcs = match &request.get_ref().device_config_store {
-            Some(v) => v,
-            None => {
-                return Err(Status::invalid_argument("device_config_store is missing"));
-            }
-        };
-
-        let dev_eui = EUI64::from_str(&req_dcs.dev_eui).map_err(|e| e.status())?;
-
-        self.validator
-            .validate(
-                request.extensions(),
-                validator::ValidateDeviceConfigStoreAccess::new(validator::Flag::Update, dev_eui),
-            )
-            .await?;
-
-        // update
-        let _ = device_config_store::update(device_config_store::DeviceConfigStore {
-            dev_eui,
-            chmask_config: req_dcs.chmask_config.clone(),
-            ..Default::default()
-        })
-        .await
-        .map_err(|e| e.status())?;
-
-        Ok(Response::new(()))
     }
 
     async fn delete(
@@ -214,7 +181,9 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             .await?;
 
         let channels = {
-            let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
+            let d = storage::device::get(&dev_eui)
+                .await
+                .map_err(|e| e.status())?;
 
             let ds = d.get_device_session().map_err(|e| e.status())?;
 
@@ -262,7 +231,6 @@ pub mod test {
 
     use super::*;
     use crate::api::auth;
-    use crate::storage;
     use crate::test;
     use chirpstack_api::internal;
 
@@ -299,7 +267,7 @@ pub mod test {
         // create
         let create_req = get_request(
             &key.id,
-            api::CreateDeviceConfigStoreRequest {
+            api::SetDeviceConfigStoreRequest {
                 device_config_store: Some(api::DeviceConfigStore {
                     dev_eui: d.dev_eui.to_string(),
                     chmask_config: Some(api::ChMaskConfig {
@@ -308,7 +276,7 @@ pub mod test {
                 }),
             },
         );
-        let _ = service.create(create_req).await.unwrap();
+        let _ = service.set(create_req).await.unwrap();
 
         // get
         let get_req = get_request(
@@ -331,7 +299,7 @@ pub mod test {
         // update
         let update_req = get_request(
             &key.id,
-            api::UpdateDeviceConfigStoreRequest {
+            api::SetDeviceConfigStoreRequest {
                 device_config_store: Some(api::DeviceConfigStore {
                     dev_eui: d.dev_eui.to_string(),
                     chmask_config: Some(api::ChMaskConfig {
@@ -340,7 +308,7 @@ pub mod test {
                 }),
             },
         );
-        let _ = service.update(update_req).await.unwrap();
+        let _ = service.set(update_req).await.unwrap();
 
         // get updated
         let get_req = get_request(

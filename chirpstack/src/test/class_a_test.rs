@@ -5889,7 +5889,7 @@ async fn test_lorawan_10_config_store() {
             before_func: Some(Box::new(move || {
                 let dev_eui = dev.dev_eui;
                 Box::pin(async move {
-                    device_config_store::create(device_config_store::DeviceConfigStore {
+                    device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
                         chmask_config: Some(api::ChMaskConfig {
                             enabled_uplink_channel_indices: vec![0, 1, 2],
@@ -5923,7 +5923,7 @@ async fn test_lorawan_10_config_store() {
             before_func: Some(Box::new(move || {
                 let dev_eui = dev.dev_eui;
                 Box::pin(async move {
-                    device_config_store::create(device_config_store::DeviceConfigStore {
+                    device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
                         chmask_config: Some(api::ChMaskConfig {
                             enabled_uplink_channel_indices: vec![0, 2],
@@ -6022,7 +6022,7 @@ async fn test_lorawan_10_config_store() {
             before_func: Some(Box::new(move || {
                 let dev_eui = dev.dev_eui;
                 Box::pin(async move {
-                    device_config_store::create(device_config_store::DeviceConfigStore {
+                    device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
                         chmask_config: Some(api::ChMaskConfig {
                             enabled_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],

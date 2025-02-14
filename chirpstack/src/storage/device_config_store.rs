@@ -66,18 +66,21 @@ pub struct DeviceConfigStoreListItem {
     pub updated_at: DateTime<Utc>,
 }
 
-pub async fn create(mut dcs: DeviceConfigStore) -> Result<DeviceConfigStore, Error> {
+pub async fn upsert(mut dcs: DeviceConfigStore) -> Result<DeviceConfigStore, Error> {
     dcs.validate()?;
 
     let dcs: DeviceConfigStore = diesel::insert_into(device_config_store::table)
         .values(&dcs)
+        .on_conflict(device_config_store::dev_eui)
+        .do_update()
+        .set((
+            device_config_store::updated_at.eq(Utc::now()),
+            device_config_store::chmask_config.eq(&dcs.chmask_config),
+        ))
         .get_result(&mut get_async_db_conn().await?)
         .await
         .map_err(|e| Error::from_diesel(e, dcs.dev_eui.to_string()))?;
-    info!(
-        dev_eui = %dcs.dev_eui,
-        "Device config store created"
-    );
+    info!(dev_eui = %dcs.dev_eui, "Device config store set");
     Ok(dcs)
 }
 
@@ -87,22 +90,6 @@ pub async fn get(dev_eui: &EUI64) -> Result<DeviceConfigStore, Error> {
         .first(&mut get_async_db_conn().await?)
         .await
         .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
-    Ok(dcs)
-}
-
-pub async fn update(mut dcs: DeviceConfigStore) -> Result<DeviceConfigStore, Error> {
-    dcs.validate()?;
-
-    let dcs: DeviceConfigStore =
-        diesel::update(device_config_store::dsl::device_config_store.find(&dcs.dev_eui))
-            .set((
-                device_config_store::updated_at.eq(Utc::now()),
-                device_config_store::chmask_config.eq(&dcs.chmask_config),
-            ))
-            .get_result(&mut get_async_db_conn().await?)
-            .await
-            .map_err(|e| Error::from_diesel(e, dcs.dev_eui.to_string()))?;
-    info!(dev_eui = %dcs.dev_eui, "Device config store updated");
     Ok(dcs)
 }
 
@@ -206,7 +193,7 @@ pub mod test {
             dev_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
             ..Default::default()
         };
-        assert!(create(dcs).await.is_err());
+        assert!(upsert(dcs).await.is_err());
 
         // create device
         let d = {
@@ -232,7 +219,7 @@ pub mod test {
             dev_eui: d.dev_eui,
             ..Default::default()
         };
-        assert!(create(dcs).await.is_err());
+        assert!(upsert(dcs).await.is_err());
 
         // invalid empty channel mask vector
         let dcs = DeviceConfigStore {
@@ -242,13 +229,13 @@ pub mod test {
             }),
             ..Default::default()
         };
-        assert!(create(dcs).await.is_err());
+        assert!(upsert(dcs).await.is_err());
 
         // not created yet
         assert!(get(&d.dev_eui).await.is_err());
 
         // create
-        let mut dcs = create(DeviceConfigStore {
+        let mut dcs = upsert(DeviceConfigStore {
             dev_eui: d.dev_eui,
             chmask_config: Some(api::ChMaskConfig {
                 enabled_uplink_channel_indices: vec![0, 1, 2],
@@ -270,7 +257,7 @@ pub mod test {
         dcs.chmask_config = Some(api::ChMaskConfig {
             enabled_uplink_channel_indices: vec![0, 1, 2, 3],
         });
-        dcs = update(dcs).await.unwrap();
+        dcs = upsert(dcs).await.unwrap();
         let dcs_get = get(&d.dev_eui).await.unwrap();
         assert_eq!(dcs, dcs_get);
 

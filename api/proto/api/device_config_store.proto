@@ -17,10 +17,10 @@ import "google/protobuf/empty.proto";
 // DeviceConfigStoreService is the service providing API methods for managing
 // the configuration of radio parameters of devices.
 service DeviceConfigStoreService {
-    // Create configuration store for the device.
-    rpc Create(CreateDeviceConfigStoreRequest) returns (google.protobuf.Empty) {
+    // Set configuration store for the device (i.e., Upsert).
+    rpc Set(SetDeviceConfigStoreRequest) returns (google.protobuf.Empty) {
         option (google.api.http) = {
-            post : "/api/device_config_stores"
+            put : "/api/device_config_stores/{device_config_store.dev_eui}"
             body : "*"
         };
     }
@@ -30,14 +30,6 @@ service DeviceConfigStoreService {
         returns (GetDeviceConfigStoreResponse) {
         option (google.api.http) = {
             get : "/api/device_config_stores/{dev_eui}"
-        };
-    }
-
-    // Update the configuration store for the given device.
-    rpc Update(UpdateDeviceConfigStoreRequest) returns (google.protobuf.Empty) {
-        option (google.api.http) = {
-            put : "/api/device_config_stores/{device_config_store.dev_eui}"
-            body : "*"
         };
     }
 
@@ -122,8 +114,8 @@ message DeviceUplinkChannel {
     bool user_defined = 5;
 }
 
-message CreateDeviceConfigStoreRequest {
-    // Object to create.
+message SetDeviceConfigStoreRequest {
+    // Object to set.
     DeviceConfigStore device_config_store = 1;
 }
 
@@ -141,11 +133,6 @@ message GetDeviceConfigStoreResponse {
 
     // Last update timestamp.
     google.protobuf.Timestamp updated_at = 3;
-}
-
-message UpdateDeviceConfigStoreRequest {
-    // Object to update.
-    DeviceConfigStore device_config_store = 1;
 }
 
 message DeleteDeviceConfigStoreRequest {
