@@ -8,10 +8,12 @@ use super::assert;
 use crate::storage::{
     application,
     device::{self, DeviceClass},
-    device_config_store, device_profile, device_queue, gateway, mac_command, reset_redis, tenant,
+    device_config_store, device_profile, device_queue, fields, gateway, mac_command, reset_redis,
+    tenant,
 };
 use crate::{config, gateway::backend as gateway_backend, integration, region, test, uplink};
 use chirpstack_api::{api, common, gw, integration as integration_pb, internal, stream};
+use lrwn::region::CommonName;
 use lrwn::{AES128Key, DevAddr, EUI64};
 
 type Function = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
@@ -95,20 +97,23 @@ async fn test_gateway_filtering() {
         dev_eui: EUI64::from_be_bytes([2, 2, 3, 4, 5, 6, 7, 8]),
         enabled_class: DeviceClass::B,
         dev_addr: Some(DevAddr::from_be_bytes([1, 2, 3, 4])),
-        device_session: Some(internal::DeviceSession {
-            mac_version: common::MacVersion::Lorawan102.into(),
-            dev_addr: vec![1, 2, 3, 4],
-            f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            f_cnt_up: 7,
-            n_f_cnt_down: 5,
-            enabled_uplink_channel_indices: vec![0, 1, 2],
-            rx1_delay: 1,
-            rx2_frequency: 869525000,
-            region_config_id: "eu868".into(),
-            ..Default::default()
-        }),
+        device_session: Some(
+            internal::DeviceSession {
+                mac_version: common::MacVersion::Lorawan102.into(),
+                dev_addr: vec![1, 2, 3, 4],
+                f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                f_cnt_up: 7,
+                n_f_cnt_down: 5,
+                enabled_uplink_channel_indices: vec![0, 1, 2],
+                rx1_delay: 1,
+                rx2_frequency: 869525000,
+                region_config_id: "eu868".into(),
+                ..Default::default()
+            }
+            .into(),
+        ),
         ..Default::default()
     })
     .await
@@ -116,29 +121,17 @@ async fn test_gateway_filtering() {
 
     let ds = dev.get_device_session().unwrap();
 
-    let mut rx_info_a = gw::UplinkRxInfo {
+    let rx_info_a = gw::UplinkRxInfo {
         gateway_id: gw_a.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info_a
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info_a
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
-    let mut rx_info_b = gw::UplinkRxInfo {
+    let rx_info_b = gw::UplinkRxInfo {
         gateway_id: gw_b.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info_b
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info_b
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -183,171 +176,6 @@ async fn test_gateway_filtering() {
             device_session: Some(ds.clone()),
             tx_info: tx_info.clone(),
             rx_info: rx_info_b.clone(),
-            phy_payload: lrwn::PhyPayload {
-                mhdr: lrwn::MHDR {
-                    m_type: lrwn::MType::UnconfirmedDataUp,
-                    major: lrwn::Major::LoRaWANR1,
-                },
-                payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
-                    fhdr: lrwn::FHDR {
-                        devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
-                        f_cnt: 7,
-                        ..Default::default()
-                    },
-                    f_port: Some(1),
-                    frm_payload: None,
-                }),
-                mic: Some([48, 94, 26, 239]),
-            },
-            assert: vec![assert::f_cnt_up(dev.dev_eui, 7)],
-        },
-    ];
-
-    for tst in &tests {
-        run_test(tst).await;
-    }
-}
-
-#[tokio::test]
-async fn test_region_config_id_filtering() {
-    let _guard = test::prepare().await;
-
-    // We need to configure the eu868_other region.
-    let region_conf = lrwn::region::get(lrwn::region::CommonName::EU868, false, false);
-    region::set("eu868_other", region_conf);
-
-    let t = tenant::create(tenant::Tenant {
-        name: "tenant".into(),
-        can_have_gateways: true,
-        ..Default::default()
-    })
-    .await
-    .unwrap();
-
-    let gw = gateway::create(gateway::Gateway {
-        name: "test-gw".into(),
-        tenant_id: t.id,
-        gateway_id: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
-        ..Default::default()
-    })
-    .await
-    .unwrap();
-
-    let app = application::create(application::Application {
-        name: "app".into(),
-        tenant_id: t.id,
-        ..Default::default()
-    })
-    .await
-    .unwrap();
-
-    let dp = device_profile::create(device_profile::DeviceProfile {
-        name: "test-dp".into(),
-        tenant_id: t.id,
-        region: lrwn::region::CommonName::EU868,
-        region_config_id: Some("eu868".to_string()),
-        mac_version: lrwn::region::MacVersion::LORAWAN_1_0_2,
-        reg_params_revision: lrwn::region::Revision::A,
-        supports_otaa: true,
-        ..Default::default()
-    })
-    .await
-    .unwrap();
-
-    let dev = device::create(device::Device {
-        name: "device".into(),
-        application_id: app.id,
-        device_profile_id: dp.id,
-        dev_eui: EUI64::from_be_bytes([2, 2, 3, 4, 5, 6, 7, 8]),
-        enabled_class: DeviceClass::A,
-        dev_addr: Some(DevAddr::from_be_bytes([1, 2, 3, 4])),
-        ..Default::default()
-    })
-    .await
-    .unwrap();
-
-    let mut rx_info_ok = gw::UplinkRxInfo {
-        gateway_id: gw.gateway_id.to_string(),
-        location: Some(Default::default()),
-        ..Default::default()
-    };
-    rx_info_ok
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info_ok
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
-
-    let mut rx_info_invalid = gw::UplinkRxInfo {
-        gateway_id: gw.gateway_id.to_string(),
-        location: Some(Default::default()),
-        ..Default::default()
-    };
-    rx_info_invalid
-        .metadata
-        .insert("region_config_id".to_string(), "eu868_other".to_string());
-    rx_info_invalid
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
-
-    let mut tx_info = gw::UplinkTxInfo {
-        frequency: 868100000,
-        ..Default::default()
-    };
-    uplink::helpers::set_uplink_modulation("eu868", &mut tx_info, 0).unwrap();
-
-    let ds = internal::DeviceSession {
-        mac_version: common::MacVersion::Lorawan102.into(),
-        dev_addr: vec![1, 2, 3, 4],
-        f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-        s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-        nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-        f_cnt_up: 7,
-        n_f_cnt_down: 5,
-        enabled_uplink_channel_indices: vec![0, 1, 2],
-        rx1_delay: 1,
-        rx2_frequency: 869525000,
-        region_config_id: "eu868".into(),
-        ..Default::default()
-    };
-
-    let tests = vec![
-        Test {
-            name: "matching config id".into(),
-            dev_eui: dev.dev_eui,
-            device_queue_items: vec![],
-            before_func: None,
-            after_func: None,
-            device_session: Some(ds.clone()),
-            tx_info: tx_info.clone(),
-            rx_info: rx_info_ok.clone(),
-            phy_payload: lrwn::PhyPayload {
-                mhdr: lrwn::MHDR {
-                    m_type: lrwn::MType::UnconfirmedDataUp,
-                    major: lrwn::Major::LoRaWANR1,
-                },
-                payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
-                    fhdr: lrwn::FHDR {
-                        devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
-                        f_cnt: 7,
-                        ..Default::default()
-                    },
-                    f_port: Some(1),
-                    frm_payload: None,
-                }),
-                mic: Some([48, 94, 26, 239]),
-            },
-            assert: vec![assert::f_cnt_up(dev.dev_eui, 8)],
-        },
-        Test {
-            name: "non-matching configuration id".into(),
-            dev_eui: dev.dev_eui,
-            device_queue_items: vec![],
-            before_func: None,
-            after_func: None,
-            device_session: Some(ds.clone()),
-            tx_info: tx_info.clone(),
-            rx_info: rx_info_invalid.clone(),
             phy_payload: lrwn::PhyPayload {
                 mhdr: lrwn::MHDR {
                     m_type: lrwn::MType::UnconfirmedDataUp,
@@ -426,17 +254,11 @@ async fn test_lorawan_10_errors() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -623,17 +445,11 @@ async fn test_lorawan_11_errors() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info_freq = gw::UplinkTxInfo {
         frequency: 868300000,
@@ -778,17 +594,11 @@ async fn test_lorawan_10_skip_f_cnt() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -856,6 +666,7 @@ async fn test_lorawan_10_skip_f_cnt() {
                     rx_info: vec![rx_info.clone()],
                     f_cnt: 7,
                     f_port: 1,
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
                 assert::f_cnt_up(dev.dev_eui, 8),
@@ -905,6 +716,7 @@ async fn test_lorawan_10_skip_f_cnt() {
                     rx_info: vec![rx_info.clone()],
                     f_cnt: 0,
                     f_port: 1,
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
                 assert::f_cnt_up(dev.dev_eui, 1),
@@ -972,17 +784,11 @@ async fn test_lorawan_10_device_disabled() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -1095,17 +901,11 @@ async fn test_lorawan_10_uplink() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -1186,6 +986,7 @@ async fn test_lorawan_10_uplink() {
                     f_port: 1,
                     dr: 0,
                     data: vec![215, 241, 112, 52],
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -1258,6 +1059,7 @@ async fn test_lorawan_10_uplink() {
                     f_port: 1,
                     dr: 10,
                     data: vec![215, 241, 112, 52],
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -1266,7 +1068,7 @@ async fn test_lorawan_10_uplink() {
             name: "unconfirmed uplink with payload + ACK".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 1,
                 f_cnt_down: Some(4),
@@ -1337,6 +1139,7 @@ async fn test_lorawan_10_uplink() {
                     f_port: 1,
                     dr: 0,
                     data: vec![215, 241, 112, 52],
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -1388,6 +1191,7 @@ async fn test_lorawan_10_uplink() {
                     f_port: 1,
                     dr: 0,
                     data: vec![],
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -1440,6 +1244,7 @@ async fn test_lorawan_10_uplink() {
                     dr: 0,
                     confirmed: true,
                     data: vec![215, 241, 112, 52],
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
                 assert::downlink_frame(gw::DownlinkFrame {
@@ -1551,6 +1356,7 @@ async fn test_lorawan_10_uplink() {
                     f_port: 1,
                     dr: 0,
                     confirmed: true,
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
                 assert::downlink_frame(gw::DownlinkFrame {
@@ -1732,17 +1538,11 @@ async fn test_lorawan_10_end_to_end_enc() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -1835,6 +1635,7 @@ async fn test_lorawan_10_end_to_end_enc() {
                     session_key_id: "010203".into(),
                     ..Default::default()
                 }),
+                region_config_id: "eu868".into(),
                 ..Default::default()
             })],
         },
@@ -1889,6 +1690,7 @@ async fn test_lorawan_10_end_to_end_enc() {
                     }),
                     ..Default::default()
                 }),
+                region_config_id: "eu868".into(),
                 ..Default::default()
             })],
         },
@@ -1896,7 +1698,7 @@ async fn test_lorawan_10_end_to_end_enc() {
             name: "end-to-end encryption using AppSkey + encrypted downlink".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 1,
                 data: vec![1, 2, 3, 4],
@@ -1952,6 +1754,7 @@ async fn test_lorawan_10_end_to_end_enc() {
                         }),
                         ..Default::default()
                     }),
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
                 assert::f_cnt_up(dev.dev_eui, 11),
@@ -2060,17 +1863,11 @@ async fn test_lorawan_11_uplink() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -2152,6 +1949,7 @@ async fn test_lorawan_11_uplink() {
                     f_port: 1,
                     dr: 0,
                     data: vec![215, 241, 112, 52],
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -2160,7 +1958,7 @@ async fn test_lorawan_11_uplink() {
             name: "unconfirmed uplink with payload + ACK".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 1,
                 f_cnt_down: Some(4),
@@ -2231,6 +2029,7 @@ async fn test_lorawan_11_uplink() {
                     f_port: 1,
                     dr: 0,
                     data: vec![215, 241, 112, 52],
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -2299,17 +2098,11 @@ async fn test_lorawan_10_rx_delay() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -2389,6 +2182,7 @@ async fn test_lorawan_10_rx_delay() {
                 f_port: 1,
                 confirmed: true,
                 dr: 0,
+                region_config_id: "eu868".into(),
                 ..Default::default()
             }),
             assert::downlink_frame(gw::DownlinkFrame {
@@ -2510,6 +2304,7 @@ async fn test_lorawan_10_rx_delay() {
                 f_port: 1,
                 confirmed: true,
                 dr: 0,
+                region_config_id: "eu868".into(),
                 ..Default::default()
             }),
             assert::downlink_frame(gw::DownlinkFrame {
@@ -2631,6 +2426,7 @@ async fn test_lorawan_10_rx_delay() {
                 f_port: 1,
                 confirmed: true,
                 dr: 0,
+                region_config_id: "eu868".into(),
                 ..Default::default()
             }),
             assert::downlink_phy_payloads(vec![
@@ -2744,17 +2540,11 @@ async fn test_lorawan_10_mac_commands() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -2885,7 +2675,7 @@ async fn test_lorawan_10_mac_commands() {
                 .into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 1,
                 data: vec![1, 2, 3, 4],
@@ -3115,17 +2905,11 @@ async fn test_lorawan_11_mac_commands() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -3309,17 +3093,11 @@ async fn test_lorawan_10_device_queue() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -3351,7 +3129,7 @@ async fn test_lorawan_10_device_queue() {
             name: "unconfirmed uplink + one unconfirmed downlink payload in queue".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 10,
                 data: vec![1, 2, 3, 4],
@@ -3430,14 +3208,14 @@ async fn test_lorawan_10_device_queue() {
             dev_eui: dev.dev_eui,
             device_queue_items: vec![
                 device_queue::DeviceQueueItem {
-                    id: Uuid::new_v4(),
+                    id: Uuid::new_v4().into(),
                     dev_eui: dev.dev_eui,
                     f_port: 10,
                     data: vec![1, 2, 3, 4],
                     ..Default::default()
                 },
                 device_queue::DeviceQueueItem {
-                    id: Uuid::new_v4(),
+                    id: Uuid::new_v4().into(),
                     dev_eui: dev.dev_eui,
                     f_port: 10,
                     data: vec![2, 2, 3, 4],
@@ -3520,7 +3298,7 @@ async fn test_lorawan_10_device_queue() {
             name: "unconfirmed uplink + one confirmed downlink payload in queue".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 10,
                 data: vec![1, 2, 3, 4],
@@ -3599,7 +3377,7 @@ async fn test_lorawan_10_device_queue() {
             name: "unconfirmed uplink data + downlink payload which exceeds the max payload size (for dr 0)".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 10,
                 data: vec![0; 52],
@@ -3636,7 +3414,7 @@ async fn test_lorawan_10_device_queue() {
 			name: "unconfirmed uplink data + one unconfirmed downlink payload in queue (exactly max size for dr 0) + one mac command".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 10,
                 data: vec![0; 51],
@@ -3786,17 +3564,11 @@ async fn test_lorawan_11_device_queue() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -3829,7 +3601,7 @@ async fn test_lorawan_11_device_queue() {
             name: "unconfirmed uplink + one unconfirmed downlink payload in queue".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 10,
                 data: vec![1, 2, 3, 4],
@@ -3908,14 +3680,14 @@ async fn test_lorawan_11_device_queue() {
             dev_eui: dev.dev_eui,
             device_queue_items: vec![
                 device_queue::DeviceQueueItem {
-                    id: Uuid::new_v4(),
+                    id: Uuid::new_v4().into(),
                     dev_eui: dev.dev_eui,
                     f_port: 10,
                     data: vec![1, 2, 3, 4],
                     ..Default::default()
                 },
                 device_queue::DeviceQueueItem {
-                    id: Uuid::new_v4(),
+                    id: Uuid::new_v4().into(),
                     dev_eui: dev.dev_eui,
                     f_port: 10,
                     data: vec![2, 2, 3, 4],
@@ -3998,7 +3770,7 @@ async fn test_lorawan_11_device_queue() {
             name: "unconfirmed uplink + one confirmed downlink payload in queue".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 10,
                 data: vec![1, 2, 3, 4],
@@ -4077,7 +3849,7 @@ async fn test_lorawan_11_device_queue() {
             name: "unconfirmed uplink data + downlink payload which exceeds the max payload size (for dr 0)".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 10,
                 data: vec![0; 52],
@@ -4114,7 +3886,7 @@ async fn test_lorawan_11_device_queue() {
 			name: "unconfirmed uplink data + one unconfirmed downlink payload in queue (exactly max size for dr 0) + one mac command".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![device_queue::DeviceQueueItem {
-                id: Uuid::nil(),
+                id: Uuid::nil().into(),
                 dev_eui: dev.dev_eui,
                 f_port: 10,
                 data: vec![0; 51],
@@ -4267,17 +4039,11 @@ async fn test_lorawan_10_adr() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -5110,17 +4876,11 @@ async fn test_lorawan_10_device_status_request() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -5375,17 +5135,11 @@ async fn test_lorawan_11_receive_window_selection() {
     .await
     .unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -5427,7 +5181,7 @@ async fn test_lorawan_11_receive_window_selection() {
         name: "unconfirmed uplink with payload (rx1)".into(),
         dev_eui: dev.dev_eui,
         device_queue_items: vec![device_queue::DeviceQueueItem {
-            id: Uuid::nil(),
+            id: Uuid::nil().into(),
             dev_eui: dev.dev_eui,
             f_port: 1,
             data: vec![1],
@@ -5497,7 +5251,7 @@ async fn test_lorawan_11_receive_window_selection() {
         name: "unconfirmed uplink with payload (rx2)".into(),
         dev_eui: dev.dev_eui,
         device_queue_items: vec![device_queue::DeviceQueueItem {
-            id: Uuid::nil(),
+            id: Uuid::nil().into(),
             dev_eui: dev.dev_eui,
             f_port: 1,
             data: vec![1],
@@ -5567,7 +5321,7 @@ async fn test_lorawan_11_receive_window_selection() {
         name: "unconfirmed uplink with payload (rx1 + rx2)".into(),
         dev_eui: dev.dev_eui,
         device_queue_items: vec![device_queue::DeviceQueueItem {
-            id: Uuid::nil(),
+            id: Uuid::nil().into(),
             dev_eui: dev.dev_eui,
             f_port: 1,
             data: vec![1],
@@ -5666,7 +5420,7 @@ async fn test_lorawan_11_receive_window_selection() {
         name: "unconfirmed uplink with payload (rx1, payload exceeds rx2 limit)".into(),
         dev_eui: dev.dev_eui,
         device_queue_items: vec![device_queue::DeviceQueueItem {
-            id: Uuid::nil(),
+            id: Uuid::nil().into(),
             dev_eui: dev.dev_eui,
             f_port: 1,
             data: vec![0; 100],
@@ -5891,9 +5645,12 @@ async fn test_lorawan_10_config_store() {
                 Box::pin(async move {
                     device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
-                        chmask_config: Some(api::ChMaskConfig {
-                            enabled_uplink_channel_indices: vec![0, 1, 2],
-                        }),
+                        chmask_config: Some(
+                            api::ChMaskConfig {
+                                enabled_uplink_channel_indices: vec![0, 1, 2],
+                            }
+                            .into(),
+                        ),
                         ..Default::default()
                     })
                     .await
@@ -5925,9 +5682,12 @@ async fn test_lorawan_10_config_store() {
                 Box::pin(async move {
                     device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
-                        chmask_config: Some(api::ChMaskConfig {
-                            enabled_uplink_channel_indices: vec![0, 2],
-                        }),
+                        chmask_config: Some(
+                            api::ChMaskConfig {
+                                enabled_uplink_channel_indices: vec![0, 2],
+                            }
+                            .into(),
+                        ),
                         ..Default::default()
                     })
                     .await
@@ -6024,9 +5784,12 @@ async fn test_lorawan_10_config_store() {
                 Box::pin(async move {
                     device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
-                        chmask_config: Some(api::ChMaskConfig {
-                            enabled_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],
-                        }),
+                        chmask_config: Some(
+                            api::ChMaskConfig {
+                                enabled_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],
+                            }
+                            .into(),
+                        ),
                         ..Default::default()
                     })
                     .await
@@ -6139,7 +5902,12 @@ async fn run_test(t: &Test) {
     device::partial_update(
         t.dev_eui,
         &device::DeviceChangeset {
-            device_session: Some(t.device_session.clone()),
+            device_session: Some(
+                t.device_session
+                    .as_ref()
+                    .map(fields::DeviceSession::from)
+                    .clone(),
+            ),
             ..Default::default()
         },
     )
@@ -6155,6 +5923,8 @@ async fn run_test(t: &Test) {
     }
 
     uplink::handle_uplink(
+        CommonName::EU868,
+        "eu868",
         Uuid::new_v4(),
         gw::UplinkFrameSet {
             phy_payload: t.phy_payload.to_vec().unwrap(),

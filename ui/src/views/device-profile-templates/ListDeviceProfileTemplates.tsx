@@ -15,8 +15,10 @@ import { getEnumName } from "../helpers";
 import type { GetPageCallbackFunc } from "../../components/DataTable";
 import DataTable from "../../components/DataTable";
 import DeviceProfileTemplateStore from "../../stores/DeviceProfileTemplateStore";
+import { useTitle } from "../helpers";
 
 function ListDeviceProfileTemplates() {
+  useTitle("Network Server", "Device-profile templates");
   const columns: ColumnsType<DeviceProfileTemplateListItem.AsObject> = [
     {
       title: "Vendor",
@@ -45,7 +47,14 @@ function ListDeviceProfileTemplates() {
     },
   ];
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListDeviceProfileTemplatesRequest();
     req.setLimit(limit);
     req.setOffset(offset);

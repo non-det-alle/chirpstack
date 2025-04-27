@@ -10,8 +10,10 @@ import { ListTenantsRequest } from "@chirpstack/chirpstack-api-grpc-web/api/tena
 import type { GetPageCallbackFunc } from "../../components/DataTable";
 import DataTable from "../../components/DataTable";
 import TenantStore from "../../stores/TenantStore";
+import { useTitle } from "../helpers";
 
 function ListTenants() {
+  useTitle("Network Server", "Tenants");
   const columns: ColumnsType<TenantListItem.AsObject> = [
     {
       title: "Name",
@@ -90,7 +92,14 @@ function ListTenants() {
     },
   ];
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListTenantsRequest();
     req.setLimit(limit);
     req.setOffset(offset);

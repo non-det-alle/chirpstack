@@ -13,6 +13,13 @@ env:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        database:
+          - postgres
+          - sqlite
+    env:
+      DATABASE: ${{ matrix.database }}
     steps:
       -
         name: Checkout
@@ -21,7 +28,7 @@ jobs:
         name: Install Nix
         uses: cachix/install-nix-action@v27
         with:
-          nix_path: nixpkgs=channel:nixos-24.05
+          nix_path: nixpkgs=channel:nixos-24.11
       -
         name: Cargo cache
         uses: actions/cache@v4
@@ -32,7 +39,7 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-test-${{ matrix.database }}-${{ hashFiles('**/Cargo.lock') }}
       -
         name: Start dependency services
         run: docker compose up -d
@@ -47,6 +54,13 @@ jobs:
     needs: tests
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        database:
+          - postgres
+          - sqlite
+    env:
+      DATABASE: ${{ matrix.database }}
     steps:
       -
         name: Checkout
@@ -55,7 +69,7 @@ jobs:
         name: Install Nix
         uses: cachix/install-nix-action@v27
         with:
-          nix_path: nixpkgs=channel:nixos-24.05
+          nix_path: nixpkgs=channel:nixos-24.11
       -
         name: Cargo cache
         uses: actions/cache@v4
@@ -94,7 +108,7 @@ jobs:
         uses: docker/metadata-action@v3
         with:
           images: |
-            chirpstack/${{ github.event.repository.name }}
+            chirpstack/${{ github.event.repository.name }}${{ matrix.database != 'postgres' && format('-{0}', matrix.database) || '' }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}

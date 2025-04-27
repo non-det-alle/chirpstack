@@ -7,10 +7,7 @@ dist:
 
 # Install dev dependencies
 dev-dependencies:
-	cargo install cross --version 0.2.5
-	cargo install diesel_cli --version 2.2.1 --no-default-features --features postgres
-	cargo install cargo-deb --version 1.43.1
-	cargo install cargo-generate-rpm --version 0.12.1
+	cargo install cargo-generate-rpm --version 0.12.1 --locked
 
 # Set the versions
 version:
@@ -52,10 +49,6 @@ devshell:
 # Enters the Docker devshell for ChirpStack development.
 docker-devshell:
 	docker compose run --rm --service-ports --name chirpstack chirpstack
-
-# Enters the devshell for ChirpStack UI development.
-docker-devshell-ui:
-	docker compose run --rm --service-ports --name chirpstack-ui chirpstack-ui bash
 
 # Runs the tests
 test:

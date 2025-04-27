@@ -5,12 +5,11 @@ use diesel_async::RunQueryDsl;
 use tracing::info;
 use uuid::Uuid;
 
-use chirpstack_api::{api, internal::DeviceSession};
+use chirpstack_api::api;
 use lrwn::EUI64;
 
-use super::error::Error;
-use super::get_async_db_conn;
 use super::schema::{device, device_config_store};
+use super::{error::Error, fields, get_async_db_conn};
 
 #[derive(Queryable, Insertable, AsChangeset, PartialEq, Debug, Clone)]
 #[diesel(table_name = device_config_store)]
@@ -18,7 +17,7 @@ pub struct DeviceConfigStore {
     pub dev_eui: EUI64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub chmask_config: Option<api::ChMaskConfig>,
+    pub chmask_config: Option<fields::ChMaskConfig>,
 }
 
 impl DeviceConfigStore {
@@ -85,7 +84,7 @@ pub async fn upsert(mut dcs: DeviceConfigStore) -> Result<DeviceConfigStore, Err
 }
 
 pub async fn get(dev_eui: &EUI64) -> Result<DeviceConfigStore, Error> {
-    let dcs = device_config_store::dsl::device_config_store
+    let dcs = device_config_store::table
         .find(&dev_eui)
         .first(&mut get_async_db_conn().await?)
         .await
@@ -94,7 +93,7 @@ pub async fn get(dev_eui: &EUI64) -> Result<DeviceConfigStore, Error> {
 }
 
 pub async fn delete(dev_eui: &EUI64) -> Result<(), Error> {
-    let ra = diesel::delete(device_config_store::dsl::device_config_store.find(&dev_eui))
+    let ra = diesel::delete(device_config_store::table.find(&dev_eui))
         .execute(&mut get_async_db_conn().await?)
         .await?;
     if ra == 0 {
@@ -105,14 +104,14 @@ pub async fn delete(dev_eui: &EUI64) -> Result<(), Error> {
 }
 
 pub async fn get_count(application_id: &Option<Uuid>) -> Result<i64, Error> {
-    let mut q = device_config_store::dsl::device_config_store
+    let mut q = device_config_store::table
         .select(dsl::count_star())
         .distinct()
         .inner_join(device::table)
         .into_boxed();
 
     if let Some(application_id) = application_id {
-        q = q.filter(device::dsl::application_id.eq(application_id));
+        q = q.filter(device::application_id.eq(application_id));
     }
 
     Ok(q.first(&mut get_async_db_conn().await?).await?)
@@ -123,7 +122,7 @@ pub async fn list(
     offset: i64,
     application_id: &Option<Uuid>,
 ) -> Result<Vec<DeviceConfigStoreListItem>, Error> {
-    let mut q = device_config_store::dsl::device_config_store
+    let mut q = device_config_store::table
         .inner_join(device::table)
         .select((
             device_config_store::dev_eui,
@@ -134,10 +133,10 @@ pub async fn list(
         .into_boxed();
 
     if let Some(application_id) = application_id {
-        q = q.filter(device::dsl::application_id.eq(application_id));
+        q = q.filter(device::application_id.eq(application_id));
     }
 
-    q.order_by(device_config_store::dsl::dev_eui)
+    q.order_by(device_config_store::dev_eui)
         .limit(limit)
         .offset(offset)
         .load(&mut get_async_db_conn().await?)
@@ -146,16 +145,10 @@ pub async fn list(
 }
 
 pub async fn get_alignment(dev_eui: &EUI64) -> Result<api::ConfigStoreAlignment, Error> {
-    #[derive(Queryable)]
-    struct DeviceConfigStoreSession(DeviceConfigStore, Option<DeviceSession>);
-
-    let DeviceConfigStoreSession(dcs, ds) = device_config_store::dsl::device_config_store
+    let (dcs, ds): (DeviceConfigStore, Option<fields::DeviceSession>) = device_config_store::table
         .find(&dev_eui)
         .inner_join(device::table)
-        .select((
-            device_config_store::all_columns,
-            device::dsl::device_session,
-        ))
+        .select((device_config_store::all_columns, device::device_session))
         .first(&mut get_async_db_conn().await?)
         .await
         .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
@@ -173,8 +166,9 @@ pub async fn get_alignment(dev_eui: &EUI64) -> Result<api::ConfigStoreAlignment,
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::storage;
+    use crate::storage::{application, device, device_profile};
     use crate::test;
+    use chirpstack_api::internal;
 
     struct FilterTest<'a> {
         application_id: Option<Uuid>,
@@ -197,17 +191,20 @@ pub mod test {
 
         // create device
         let d = {
-            let dp = storage::device_profile::test::create_device_profile(None).await;
-            let app = storage::application::test::create_application(Some(dp.tenant_id)).await;
-            storage::device::create(storage::device::Device {
+            let dp = device_profile::test::create_device_profile(None).await;
+            let app = application::test::create_application(Some(dp.tenant_id.into())).await;
+            device::create(device::Device {
                 name: "test-dev".into(),
                 dev_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
                 application_id: app.id,
                 device_profile_id: dp.id,
-                device_session: Some(DeviceSession {
-                    enabled_uplink_channel_indices: vec![0, 1, 2],
-                    ..Default::default()
-                }),
+                device_session: Some(
+                    internal::DeviceSession {
+                        enabled_uplink_channel_indices: vec![0, 1, 2],
+                        ..Default::default()
+                    }
+                    .into(),
+                ),
                 ..Default::default()
             })
         }
@@ -224,9 +221,12 @@ pub mod test {
         // invalid empty channel mask vector
         let dcs = DeviceConfigStore {
             dev_eui: d.dev_eui,
-            chmask_config: Some(api::ChMaskConfig {
-                enabled_uplink_channel_indices: vec![],
-            }),
+            chmask_config: Some(
+                api::ChMaskConfig {
+                    enabled_uplink_channel_indices: vec![],
+                }
+                .into(),
+            ),
             ..Default::default()
         };
         assert!(upsert(dcs).await.is_err());
@@ -235,13 +235,19 @@ pub mod test {
         assert!(get(&d.dev_eui).await.is_err());
 
         // create
-        let mut dcs = upsert(DeviceConfigStore {
-            dev_eui: d.dev_eui,
-            chmask_config: Some(api::ChMaskConfig {
-                enabled_uplink_channel_indices: vec![0, 1, 2],
-            }),
-            ..Default::default()
-        })
+        let mut dcs = upsert(
+            DeviceConfigStore {
+                dev_eui: d.dev_eui,
+                chmask_config: Some(
+                    api::ChMaskConfig {
+                        enabled_uplink_channel_indices: vec![0, 1, 2],
+                    }
+                    .into(),
+                ),
+                ..Default::default()
+            }
+            .into(),
+        )
         .await
         .unwrap();
 
@@ -254,9 +260,12 @@ pub mod test {
         assert!(align.chmask_config);
 
         // update
-        dcs.chmask_config = Some(api::ChMaskConfig {
-            enabled_uplink_channel_indices: vec![0, 1, 2, 3],
-        });
+        dcs.chmask_config = Some(
+            api::ChMaskConfig {
+                enabled_uplink_channel_indices: vec![0, 1, 2, 3],
+            }
+            .into(),
+        );
         dcs = upsert(dcs).await.unwrap();
         let dcs_get = get(&d.dev_eui).await.unwrap();
         assert_eq!(dcs, dcs_get);
@@ -275,7 +284,7 @@ pub mod test {
                 offset: 0,
             },
             FilterTest {
-                application_id: Some(d.application_id),
+                application_id: Some(d.application_id.into()),
                 dcss: vec![&dcs],
                 count: 1,
                 limit: 10,

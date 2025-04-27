@@ -12,10 +12,7 @@ use lrwn::{
 
 use super::error::Error;
 use super::join_fns;
-use super::{
-    filter_rx_info_by_region_config_id, filter_rx_info_by_tenant_id, helpers, RelayContext,
-    UplinkFrameSet,
-};
+use super::{filter_rx_info_by_tenant_id, helpers, RelayContext, UplinkFrameSet};
 
 use crate::api::{backend::get_async_receiver, helpers::ToProto};
 use crate::backend::{joinserver, keywrap, roaming};
@@ -119,8 +116,8 @@ impl JoinRequest {
         ctx.get_device_data_or_try_pr_roaming().await?;
         ctx.get_device_keys_or_js_client().await?; // used to validate MIC + if we need external JS
         ctx.set_device_info()?;
+        ctx.validate_region_config_id()?;
         ctx.filter_rx_info_by_tenant()?;
-        ctx.filter_rx_info_by_region_config_id()?;
         ctx.abort_on_device_is_disabled()?;
         ctx.abort_on_relay_only_comm()?;
         ctx.log_uplink_frame_set().await?;
@@ -337,24 +334,27 @@ impl JoinRequest {
         Ok(())
     }
 
+    fn validate_region_config_id(&self) -> Result<(), Error> {
+        trace!("Validating region_config_id against device-profile");
+
+        let dp = self.device_profile.as_ref().unwrap();
+        if let Some(v) = &dp.region_config_id {
+            if !self.uplink_frame_set.region_config_id.eq(v) {
+                warn!("Aborting as region config ID does not match with device-profile");
+                return Err(Error::Abort);
+            }
+        }
+
+        Ok(())
+    }
+
     fn filter_rx_info_by_tenant(&mut self) -> Result<()> {
         trace!("Filtering rx_info by tenant_id");
 
         filter_rx_info_by_tenant_id(
-            self.application.as_ref().unwrap().tenant_id,
+            self.application.as_ref().unwrap().tenant_id.into(),
             &mut self.uplink_frame_set,
         )?;
-        Ok(())
-    }
-
-    fn filter_rx_info_by_region_config_id(&mut self) -> Result<()> {
-        trace!("Filtering rx_info by region_config_id");
-
-        let dp = self.device_profile.as_ref().unwrap();
-        if let Some(v) = &dp.region_config_id {
-            filter_rx_info_by_region_config_id(v, &mut self.uplink_frame_set)?;
-        }
-
         Ok(())
     }
 
@@ -381,10 +381,11 @@ impl JoinRequest {
 
     fn abort_on_relay_only_comm(&self) -> Result<(), Error> {
         // In case the relay context is not set and relay_ed_relay_only is set, abort.
-        if self.relay_context.is_none() && self.device_profile.as_ref().unwrap().relay_ed_relay_only
-        {
-            info!(dev_eui = %self.device.as_ref().unwrap().dev_eui, "Only communication through relay is allowed");
-            return Err(Error::Abort);
+        if let Some(relay_params) = &self.device_profile.as_ref().unwrap().relay_params {
+            if self.relay_context.is_none() && relay_params.ed_relay_only {
+                info!(dev_eui = %self.device.as_ref().unwrap().dev_eui, "Only communication through relay is allowed");
+                return Err(Error::Abort);
+            }
         }
         Ok(())
     }
@@ -412,7 +413,7 @@ impl JoinRequest {
         let dev = self.device.as_ref().unwrap();
 
         integration::log_event(
-            app.id,
+            app.id.into(),
             &dev.variables,
             &integration_pb::LogEvent {
                 time: Some(Utc::now().into()),
@@ -456,8 +457,9 @@ impl JoinRequest {
 
         self.device_keys = Some(
             match device_keys::validate_incr_join_and_store_dev_nonce(
-                &dev.dev_eui,
-                join_request.dev_nonce as i32,
+                join_request.join_eui,
+                dev.dev_eui,
+                join_request.dev_nonce,
             )
             .await
             {
@@ -465,7 +467,7 @@ impl JoinRequest {
                 Err(v) => match v {
                     StorageError::InvalidDevNonce => {
                         integration::log_event(
-                            app.id,
+                            app.id.into(),
                             &dev.variables,
                             &integration_pb::LogEvent {
                                 time: Some(Utc::now().into()),
@@ -841,7 +843,7 @@ impl JoinRequest {
             None => {}
         }
 
-        device.device_session = Some(ds);
+        device.device_session = Some(ds.into());
 
         Ok(())
     }
@@ -954,9 +956,10 @@ impl JoinRequest {
             } else {
                 None
             },
+            region_config_id: self.uplink_frame_set.region_config_id.clone(),
         };
 
-        integration::join_event(app.id, &dev.variables, &pl).await;
+        integration::join_event(app.id.into(), &dev.variables, &pl).await;
         Ok(())
     }
 }

@@ -8,6 +8,7 @@ use crate::{
     uplink,
 };
 use chirpstack_api::{common, gw, integration as integration_pb, internal};
+use lrwn::region::CommonName;
 use lrwn::{DevAddr, EUI64Prefix, EUI64};
 
 struct Test {
@@ -76,17 +77,11 @@ async fn test_js() {
     };
     uplink::helpers::set_uplink_modulation("eu868", &mut tx_info, 0).unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let phy = lrwn::PhyPayload {
         mhdr: lrwn::MHDR {
@@ -169,7 +164,6 @@ async fn test_js() {
                         enabled_uplink_channel_indices: vec![0, 1, 2],
                         nb_trans: 1,
                         region_config_id: "eu868".to_string(),
-                        class_b_ping_slot_nb: 1,
                         ..Default::default()
                     },
                 ),
@@ -188,6 +182,7 @@ async fn test_js() {
                     }),
                     dev_addr: "01020304".into(),
                     join_server_context: None,
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -233,7 +228,6 @@ async fn test_js() {
                         enabled_uplink_channel_indices: vec![0, 1, 2],
                         nb_trans: 1,
                         region_config_id: "eu868".to_string(),
-                        class_b_ping_slot_nb: 1,
                         ..Default::default()
                     },
                 ),
@@ -255,6 +249,7 @@ async fn test_js() {
                         session_key_id: "01020304".into(),
                         ..Default::default()
                     }),
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -306,7 +301,6 @@ async fn test_js() {
                         enabled_uplink_channel_indices: vec![0, 1, 2],
                         nb_trans: 1,
                         region_config_id: "eu868".to_string(),
-                        class_b_ping_slot_nb: 1,
                         ..Default::default()
                     },
                 ),
@@ -331,6 +325,7 @@ async fn test_js() {
                         }),
                         ..Default::default()
                     }),
+                    region_config_id: "eu868".into(),
                     ..Default::default()
                 }),
             ],
@@ -371,6 +366,8 @@ async fn run_test(t: &Test) {
     gateway_backend::mock::reset().await;
 
     uplink::handle_uplink(
+        CommonName::EU868,
+        "eu868",
         Uuid::new_v4(),
         gw::UplinkFrameSet {
             phy_payload: t.phy_payload.to_vec().unwrap(),

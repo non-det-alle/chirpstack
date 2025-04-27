@@ -6,11 +6,9 @@ use chrono::{DateTime, Duration, Local, Utc};
 use tracing::{debug, error, info, span, trace, warn, Instrument, Level};
 
 use super::error::Error;
-use super::{
-    data_fns, filter_rx_info_by_region_config_id, filter_rx_info_by_tenant_id, helpers,
-    RelayContext, UplinkFrameSet,
-};
+use super::{data_fns, filter_rx_info_by_tenant_id, helpers, RelayContext, UplinkFrameSet};
 use crate::api::helpers::ToProto;
+use crate::applayer;
 use crate::backend::roaming;
 use crate::helpers::errors::PrintFullError;
 use crate::storage::error::Error as StorageError;
@@ -124,7 +122,6 @@ impl Data {
             // In case of roaming we do not know the gateways and therefore it must not be
             // filtered.
             ctx.filter_rx_info_by_tenant().await?;
-            ctx.filter_rx_info_by_region_config_id()?;
         }
         ctx.set_device_info()?;
         ctx.set_device_gateway_rx_info()?;
@@ -144,6 +141,9 @@ impl Data {
         }
         ctx.append_meta_data_to_uplink_history()?;
         ctx.send_uplink_event().await?;
+        if ctx._is_applayer() {
+            ctx.handle_applayer().await?;
+        }
         ctx.detect_and_save_measurements().await?;
         ctx.sync_uplink_f_cnt()?;
         ctx.set_region_config_id()?;
@@ -238,6 +238,7 @@ impl Data {
         };
 
         match device::get_for_phypayload_and_incr_f_cnt_up(
+            &self.uplink_frame_set.region_config_id,
             false,
             &mut self.phy_payload,
             self.uplink_frame_set.dr,
@@ -305,8 +306,14 @@ impl Data {
             dr,
         )? as u8;
 
-        match device::get_for_phypayload_and_incr_f_cnt_up(true, &mut self.phy_payload, dr, ch)
-            .await
+        match device::get_for_phypayload_and_incr_f_cnt_up(
+            &self.uplink_frame_set.region_config_id,
+            true,
+            &mut self.phy_payload,
+            dr,
+            ch,
+        )
+        .await
         {
             Ok(v) => match v {
                 device::ValidationStatus::Ok(f_cnt, d) => {
@@ -491,7 +498,7 @@ impl Data {
                 .cloned()
                 .collect(),
             };
-            integration::log_event(app.id, &dev.variables, &pl).await;
+            integration::log_event(app.id.into(), &dev.variables, &pl).await;
         }
 
         if self.reset {
@@ -509,7 +516,7 @@ impl Data {
                 .cloned()
                 .collect(),
             };
-            integration::log_event(app.id, &dev.variables, &pl).await;
+            integration::log_event(app.id.into(), &dev.variables, &pl).await;
         }
 
         Err(Error::Abort)
@@ -549,7 +556,7 @@ impl Data {
         trace!("Filtering rx_info by tenant_id");
 
         match filter_rx_info_by_tenant_id(
-            self.application.as_ref().unwrap().tenant_id,
+            self.application.as_ref().unwrap().tenant_id.into(),
             &mut self.uplink_frame_set,
         ) {
             Ok(_) => Ok(()),
@@ -570,17 +577,6 @@ impl Data {
                 Err(v)
             }
         }
-    }
-
-    fn filter_rx_info_by_region_config_id(&mut self) -> Result<()> {
-        trace!("Filtering rx_info by region_config_id");
-
-        let dp = self.device_profile.as_ref().unwrap();
-        if let Some(v) = &dp.region_config_id {
-            filter_rx_info_by_region_config_id(v, &mut self.uplink_frame_set)?;
-        }
-
-        Ok(())
     }
 
     fn decrypt_f_opts_mac_commands(&mut self) -> Result<()> {
@@ -958,6 +954,7 @@ impl Data {
             } else {
                 None
             },
+            region_config_id: self.uplink_frame_set.region_config_id.clone(),
         };
 
         if !self._is_end_to_end_encrypted() {
@@ -974,7 +971,7 @@ impl Data {
                 Ok(v) => v,
                 Err(e) => {
                     integration::log_event(
-                        app.id,
+                        app.id.into(),
                         &dev.variables,
                         &integration_pb::LogEvent {
                             time: Some(Utc::now().into()),
@@ -997,9 +994,36 @@ impl Data {
             };
         }
 
-        integration::uplink_event(app.id, &dev.variables, &pl).await;
+        integration::uplink_event(app.id.into(), &dev.variables, &pl).await;
 
         self.uplink_event = Some(pl);
+
+        Ok(())
+    }
+
+    async fn handle_applayer(&self) -> Result<()> {
+        trace!("Handling applayer protocol");
+
+        let dev = self.device.as_ref().unwrap();
+        let dp = self.device_profile.as_ref().unwrap();
+
+        let mac = if let lrwn::Payload::MACPayload(pl) = &self.phy_payload.payload {
+            pl
+        } else {
+            return Err(anyhow!("Expected MacPayload"));
+        };
+
+        applayer::handle_uplink(
+            dev,
+            dp,
+            &self.uplink_frame_set.rx_info_set,
+            mac.f_port.unwrap_or(0),
+            match &mac.frm_payload {
+                Some(lrwn::FRMPayload::Raw(b)) => b,
+                _ => &[],
+            },
+        )
+        .await;
 
         Ok(())
     }
@@ -1080,7 +1104,7 @@ impl Data {
 
         if update_dp_measurements {
             self.device_profile =
-                Some(device_profile::set_measurements(dp.id, &measurements).await?);
+                Some(device_profile::set_measurements(dp.id.into(), &measurements).await?);
         }
 
         Ok(())
@@ -1153,7 +1177,7 @@ impl Data {
         tags.extend((*dev.tags).clone());
 
         integration::ack_event(
-            app.id,
+            app.id.into(),
             &dev.variables,
             &integration_pb::AckEvent {
                 deduplication_id: self.uplink_frame_set.uplink_set_id.to_string(),
@@ -1403,8 +1427,10 @@ impl Data {
         let dp = self.device_profile.as_ref().unwrap();
 
         if let lrwn::Payload::MACPayload(pl) = &self.phy_payload.payload {
-            if dp.is_relay && pl.f_port.unwrap_or(0) == lrwn::LA_FPORT_RELAY {
-                return true;
+            if let Some(relay_params) = &dp.relay_params {
+                if relay_params.is_relay && pl.f_port.unwrap_or(0) == lrwn::LA_FPORT_RELAY {
+                    return true;
+                }
             }
         }
 
@@ -1428,5 +1454,17 @@ impl Data {
         }
 
         false
+    }
+
+    fn _is_applayer(&self) -> bool {
+        let dp = self.device_profile.as_ref().unwrap();
+        let mac = if let lrwn::Payload::MACPayload(pl) = &self.phy_payload.payload {
+            pl
+        } else {
+            return false;
+        };
+
+        dp.app_layer_params
+            .is_app_layer_f_port(mac.f_port.unwrap_or(0))
     }
 }

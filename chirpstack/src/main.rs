@@ -1,8 +1,5 @@
-// Required by rust::table macro.
 #![recursion_limit = "256"]
 
-#[macro_use]
-extern crate lazy_static;
 extern crate diesel_migrations;
 #[macro_use]
 extern crate diesel;
@@ -20,7 +17,9 @@ use tracing_subscriber::{filter, prelude::*};
 use lrwn::EUI64;
 
 mod adr;
+mod aeskey;
 mod api;
+mod applayer;
 mod backend;
 mod certificate;
 mod cmd;
@@ -63,6 +62,13 @@ enum Commands {
         /// Device EUI
         #[arg(long, value_name = "DEV_EUI")]
         dev_eui: String,
+    },
+
+    /// Import lorawan-device-profiles repository.
+    ImportLorawanDeviceProfiles {
+        /// Path to repository root.
+        #[arg(short, long, value_name = "DIR")]
+        dir: String,
     },
 
     /// Import legacy lorawan-devices repository.
@@ -112,6 +118,11 @@ async fn main() -> Result<()> {
         Some(Commands::PrintDs { dev_eui }) => {
             let dev_eui = EUI64::from_str(dev_eui).unwrap();
             cmd::print_ds::run(&dev_eui).await.unwrap();
+        }
+        Some(Commands::ImportLorawanDeviceProfiles { dir }) => {
+            cmd::import_lorawan_device_profiles::run(Path::new(&dir))
+                .await
+                .unwrap()
         }
         Some(Commands::ImportLegacyLorawanDevicesRepository { dir }) => {
             cmd::import_legacy_lorawan_devices_repository::run(Path::new(&dir))

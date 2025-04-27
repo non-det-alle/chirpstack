@@ -312,7 +312,7 @@ impl InternalService for Internal {
         let ak = api_key::ApiKey {
             name: req_key.name.clone(),
             is_admin: req_key.is_admin,
-            tenant_id,
+            tenant_id: tenant_id.map(|u| u.into()),
             ..Default::default()
         };
 

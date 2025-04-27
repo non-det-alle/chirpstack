@@ -15,12 +15,14 @@ import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
 import type { GetPageCallbackFunc } from "../../../components/DataTable";
 import DataTable from "../../../components/DataTable";
 import GatewayStore from "../../../stores/GatewayStore";
+import { useTitle } from "../../helpers";
 
 interface IProps {
   tenant: Tenant;
 }
 
 function ListRelayGateways(props: IProps) {
+  useTitle("Tenants", props.tenant.getName(), "Gateway Mesh", "Relay Gateways");
   const columns: ColumnsType<RelayGatewayListItem.AsObject> = [
     {
       title: "",
@@ -75,7 +77,14 @@ function ListRelayGateways(props: IProps) {
     },
   ];
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListRelayGatewaysRequest();
     req.setTenantId(props.tenant.getId());
     req.setLimit(limit);

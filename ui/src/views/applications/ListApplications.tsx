@@ -15,12 +15,14 @@ import type { GetPageCallbackFunc } from "../../components/DataTable";
 import DataTable from "../../components/DataTable";
 import ApplicationStore from "../../stores/ApplicationStore";
 import Admin from "../../components/Admin";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
 }
 
 function ListApplications(props: IProps) {
+  useTitle("Tenants", props.tenant.getName(), "Applications");
   const columns: ColumnsType<ApplicationListItem.AsObject> = [
     {
       title: "Name",
@@ -36,7 +38,14 @@ function ListApplications(props: IProps) {
     },
   ];
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListApplicationsRequest();
     req.setTenantId(props.tenant.getId());
     req.setLimit(limit);

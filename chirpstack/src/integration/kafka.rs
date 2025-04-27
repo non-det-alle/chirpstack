@@ -39,7 +39,7 @@ impl<'a> Integration<'a> {
         templates.register_template_string("event_key", &conf.event_key)?;
 
         let producer: FutureProducer = ClientConfig::new()
-            .set("bootstrap.servers", &conf.brokers.join(","))
+            .set("bootstrap.servers", conf.brokers.join(","))
             .set("message.timeout.ms", "5000")
             .set("allow.auto.create.topics", "true")
             .set(
@@ -107,7 +107,7 @@ impl<'a> Integration<'a> {
 }
 
 #[async_trait]
-impl<'a> IntegrationTrait for Integration<'a> {
+impl IntegrationTrait for Integration<'_> {
     async fn uplink_event(
         &self,
         _vars: &HashMap<String, String>,

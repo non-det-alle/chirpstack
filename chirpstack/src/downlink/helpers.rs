@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use anyhow::Result;
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use uuid::Uuid;
 
 use chirpstack_api::{gw, internal};
@@ -74,7 +74,7 @@ pub fn select_downlink_gateway(
     // Return a random item from the new_items slice (filtered by min_snr_margin).
     // If new_items is empty, then choose will return None and we return the first item from
     // rx_info.item.
-    Ok(match new_items.choose(&mut rand::thread_rng()) {
+    Ok(match new_items.choose(&mut rand::rng()) {
         Some(v) => v.clone(),
         None => rx_info.items[0].clone(),
     })
@@ -239,7 +239,7 @@ mod tests {
             },
             // is_private_down is set, first gateway matches tenant.
             Test {
-                tenant_id: Some(t.id),
+                tenant_id: Some(t.id.into()),
                 min_snr_margin: 0.0,
                 rx_info: internal::DeviceGatewayRxInfo {
                     items: vec![
@@ -262,7 +262,7 @@ mod tests {
             },
             // is_private_down is set, second gateway matches tenant.
             Test {
-                tenant_id: Some(t.id),
+                tenant_id: Some(t.id.into()),
                 min_snr_margin: 0.0,
                 rx_info: internal::DeviceGatewayRxInfo {
                     items: vec![

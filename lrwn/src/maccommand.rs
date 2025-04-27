@@ -4,10 +4,8 @@ use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use anyhow::Result;
-#[cfg(feature = "diesel")]
-use diesel::{backend::Backend, deserialize, serialize, sql_types::SmallInt};
 #[cfg(feature = "serde")]
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::cflist::ChMask;
 use crate::dl_settings::DLSettings;
@@ -1809,10 +1807,10 @@ impl PayloadCodec for RelayConfAnsPayload {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize))]
-#[cfg_attr(feature = "diesel", derive(AsExpression, FromSqlRow), diesel(sql_type = diesel::sql_types::SmallInt))]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum RelayModeActivation {
+    #[default]
     DisableRelayMode,
     EnableRelayMode,
     Dynamic,
@@ -1874,29 +1872,6 @@ impl ResetLimitCounter {
     }
 }
 
-#[cfg(feature = "diesel")]
-impl<DB> deserialize::FromSql<SmallInt, DB> for RelayModeActivation
-where
-    DB: Backend,
-    i16: deserialize::FromSql<SmallInt, DB>,
-{
-    fn from_sql(value: <DB as Backend>::RawValue<'_>) -> deserialize::Result<Self> {
-        let i = i16::from_sql(value)?;
-        Ok(RelayModeActivation::from_u8(i as u8)?)
-    }
-}
-
-#[cfg(feature = "diesel")]
-impl serialize::ToSql<SmallInt, diesel::pg::Pg> for RelayModeActivation
-where
-    i16: serialize::ToSql<SmallInt, diesel::pg::Pg>,
-{
-    fn to_sql(&self, out: &mut serialize::Output<'_, '_, diesel::pg::Pg>) -> serialize::Result {
-        let i = self.to_u8() as i16;
-        <i16 as serialize::ToSql<SmallInt, diesel::pg::Pg>>::to_sql(&i, &mut out.reborrow())
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize))]
 pub struct ActivationRelayMode {
@@ -1935,7 +1910,7 @@ impl ChannelSettingsED {
         ChannelSettingsED {
             second_ch_ack_offset: b[0] & 0x07,
             second_ch_dr: (b[0] & 0x78) >> 3,
-            second_ch_idx: (b[0] & 0x80) >> 7 | (b[1] & 0x01) << 1,
+            second_ch_idx: ((b[0] & 0x80) >> 7) | ((b[1] & 0x01) << 1),
             backoff: (b[1] & 0x7e) >> 1,
         }
     }
@@ -2444,7 +2419,7 @@ impl PowerLevel {
         let wor_snr = (wor_snr + 20) as u8;
         let wor_rssi = -(wor_rssi + 15) as u8;
 
-        [wor_snr | wor_rssi << 5, wor_rssi >> 3]
+        [wor_snr | (wor_rssi << 5), wor_rssi >> 3]
     }
 }
 

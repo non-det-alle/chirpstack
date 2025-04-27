@@ -17,12 +17,14 @@ import type { GetPageCallbackFunc } from "../../components/DataTable";
 import DataTable from "../../components/DataTable";
 import DeviceProfileStore from "../../stores/DeviceProfileStore";
 import Admin from "../../components/Admin";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
 }
 
 function ListDeviceProfiles(props: IProps) {
+  useTitle("Tenants", props.tenant.getName(), "Device profiles");
   const columns: ColumnsType<DeviceProfileListItem.AsObject> = [
     {
       title: "Name",
@@ -100,7 +102,14 @@ function ListDeviceProfiles(props: IProps) {
     },
   ];
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListDeviceProfilesRequest();
     req.setTenantId(props.tenant.getId());
     req.setLimit(limit);

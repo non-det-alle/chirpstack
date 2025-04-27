@@ -37,7 +37,7 @@ impl JoinAccept<'_> {
         device: &device::Device,
         join_accept: &PhyPayload,
     ) -> Result<()> {
-        let downlink_id: u32 = rand::thread_rng().gen();
+        let downlink_id: u32 = rand::rng().random();
         let span = span!(Level::INFO, "join_accept", downlink_id = downlink_id);
 
         let fut = JoinAccept::_handle(downlink_id, ufs, tenant, device, join_accept);
@@ -51,7 +51,7 @@ impl JoinAccept<'_> {
         device: &device::Device,
         join_accept: &PhyPayload,
     ) -> Result<()> {
-        let downlink_id: u32 = rand::thread_rng().gen();
+        let downlink_id: u32 = rand::rng().random();
         let span = span!(
             Level::INFO,
             "join_accept_relayed",
@@ -182,7 +182,7 @@ impl JoinAccept<'_> {
         trace!("Select downlink gateway");
 
         let gw_down = helpers::select_downlink_gateway(
-            Some(self.tenant.id),
+            Some(self.tenant.id.into()),
             &self.uplink_frame_set.region_config_id,
             self.network_conf.gateway_prefer_min_margin,
             self.device_gateway_rx_info.as_mut().unwrap(),

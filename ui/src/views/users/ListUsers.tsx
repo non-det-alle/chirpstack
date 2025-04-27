@@ -11,8 +11,10 @@ import type { GetPageCallbackFunc } from "../../components/DataTable";
 import DataTable from "../../components/DataTable";
 
 import UserStore from "../../stores/UserStore";
+import { useTitle } from "../helpers";
 
 function ListUsers() {
+  useTitle("Network Server", "Users");
   const columns: ColumnsType<UserListItem.AsObject> = [
     {
       title: "Email",
@@ -48,7 +50,14 @@ function ListUsers() {
     },
   ];
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListUsersRequest();
     req.setLimit(limit);
     req.setOffset(offset);

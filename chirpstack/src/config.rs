@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::Duration;
 use std::{env, fs};
 
@@ -9,9 +9,8 @@ use serde::{Deserialize, Serialize};
 use lrwn::region::CommonName;
 use lrwn::{AES128Key, DevAddrPrefix, EUI64Prefix, NetID};
 
-lazy_static! {
-    static ref CONFIG: Mutex<Arc<Configuration>> = Mutex::new(Arc::new(Default::default()));
-}
+static CONFIG: LazyLock<Mutex<Arc<Configuration>>> =
+    LazyLock::new(|| Mutex::new(Arc::new(Default::default())));
 
 #[derive(Default, Serialize, Deserialize, Clone)]
 #[serde(default)]
@@ -19,6 +18,7 @@ pub struct Configuration {
     pub logging: Logging,
     pub postgresql: Postgresql,
     pub redis: Redis,
+    pub sqlite: Sqlite,
     pub api: Api,
     pub gateway: Gateway,
     pub network: Network,
@@ -86,6 +86,29 @@ impl Default for Redis {
             key_prefix: "".into(),
             max_open_connections: 100,
             min_idle_connections: 0,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
+pub struct Sqlite {
+    pub path: String,
+    pub pragmas: Vec<String>,
+    pub max_open_connections: u32,
+}
+
+impl Default for Sqlite {
+    fn default() -> Self {
+        Sqlite {
+            path: "sqlite://chirpstack.sqlite".into(),
+            pragmas: vec![
+                // Set busy_timeout to avoid manually managing transaction business/contention
+                "busy_timeout = 1000".to_string(),
+                // Enable foreign-keys since it is off by default
+                "foreign_keys = ON".to_string(),
+            ],
+            max_open_connections: 4,
         }
     }
 }
@@ -501,6 +524,7 @@ pub struct JoinServerServer {
     pub ca_cert: String,
     pub tls_cert: String,
     pub tls_key: String,
+    pub authorization_header: String,
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]

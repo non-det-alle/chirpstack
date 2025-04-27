@@ -11,7 +11,7 @@ use tokio::fs;
 // Return root certificates, optionally with the provided ca_file appended.
 pub fn get_root_certs(ca_file: Option<String>) -> Result<rustls::RootCertStore> {
     let mut roots = rustls::RootCertStore::empty();
-    for cert in rustls_native_certs::load_native_certs()? {
+    for cert in rustls_native_certs::load_native_certs().certs {
         roots.add(cert)?;
     }
 
@@ -71,17 +71,34 @@ pub fn private_key_to_pkcs8(pem: &str) -> Result<String> {
         let pkcs8_pem = pkey.to_pkcs8_pem(LineEnding::default())?;
         Ok(pkcs8_pem.as_str().to_owned())
     } else if pem.contains("EC PRIVATE KEY") {
-        use elliptic_curve::{
-            pkcs8::{EncodePrivateKey, LineEnding},
-            SecretKey,
+        use sec1::{
+            der::{Decode, Encode, EncodePem},
+            pkcs8::{AlgorithmIdentifierRef, PrivateKeyInfo},
+            EcPrivateKey, LineEnding,
         };
 
-        // We assume it is a P256 based secret-key, which is the most popular curve.
-        // Attempting to decode it as P256 is still better than just failing to read it.
-        let pkey: SecretKey<p256::NistP256> =
-            SecretKey::from_sec1_pem(pem).context("Read EC SEC1")?;
-        let pkcs8_pem = pkey.to_pkcs8_pem(LineEnding::default())?;
-        Ok(pkcs8_pem.as_str().to_owned())
+        // Get a SEC1 ECPrivateKey from the PEM string input
+        let pem = pem::parse(pem).context("Parse PEM string")?;
+        let pkey =
+            EcPrivateKey::from_der(pem.contents()).context("Decode PEM into SEC1 ECPrivateKey")?;
+
+        // Retrieve the curve name from the decoded private key's parameters
+        let params_oid = pkey.parameters.and_then(|params| params.named_curve());
+
+        // Get the proper types to construct a PKCS#8 PrivateKeyInfo
+        let private_key = &pkey.to_der()?;
+        let algorithm = AlgorithmIdentifierRef {
+            oid: sec1::ALGORITHM_OID,
+            parameters: params_oid.as_ref().map(Into::into),
+        };
+
+        let pkcs8 = PrivateKeyInfo {
+            algorithm,
+            private_key,
+            public_key: None,
+        };
+
+        Ok(pkcs8.to_pem(LineEnding::default())?)
     } else {
         Ok(pem.to_string())
     }

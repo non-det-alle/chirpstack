@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .file_descriptor_set_path(out_dir.join("common").join("proto_descriptor.bin"))
         .compile_well_known_types(true)
         .extern_path(".google.protobuf", well_known_types_path)
-        .compile(
+        .compile_protos(
             &[cs_dir.join("common").join("common.proto").to_str().unwrap()],
             &[
                 proto_dir.join("chirpstack").to_str().unwrap(),
@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_well_known_types(true)
         .extern_path(".google.protobuf", well_known_types_path)
         .extern_path(".common", "crate::common")
-        .compile(
+        .compile_protos(
             &[cs_dir.join("gw").join("gw.proto").to_str().unwrap()],
             &[
                 proto_dir.join("chirpstack").to_str().unwrap(),
@@ -82,12 +82,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .extern_path(".google.protobuf", well_known_types_path)
             .extern_path(".common", "crate::common");
 
-        #[cfg(feature = "diesel")]
-        {
-            builder = builder.message_attribute("internal.DeviceSession", "#[derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)] #[diesel(sql_type = diesel::sql_types::Binary)]");
-        }
-
-        builder.compile(
+        builder.compile_protos(
             &[cs_dir
                 .join("internal")
                 .join("internal.proto")
@@ -119,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(".google.protobuf", well_known_types_path)
         .extern_path(".common", "crate::common")
         .extern_path(".gw", "crate::gw")
-        .compile(
+        .compile_protos(
             &[cs_dir
                 .join("integration")
                 .join("integration.proto")
@@ -153,7 +148,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(".google.protobuf", well_known_types_path)
         .extern_path(".common", "crate::common")
         .extern_path(".gw", "crate::gw")
-        .compile(
+        .compile_protos(
             &[
                 cs_dir.join("stream").join("meta.proto").to_str().unwrap(),
                 cs_dir.join("stream").join("frame.proto").to_str().unwrap(),
@@ -187,20 +182,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // api
-    {
-        #[allow(unused_mut)]
-        let mut builder = tonic_build::configure()
-            .out_dir(out_dir.join("api"))
-            .file_descriptor_set_path(out_dir.join("api").join("proto_descriptor.bin"))
-            .extern_path(".common", "crate::common")
-            .extern_path(".gw", "crate::gw");
-
-        #[cfg(feature = "diesel")]
-        {
-            builder = builder.message_attribute("api.ChMaskConfig", "#[derive(diesel::expression::AsExpression, diesel::deserialize::FromSqlRow)] #[diesel(sql_type = diesel::sql_types::Binary)]");
-        }
-
-        builder.compile(
+    tonic_build::configure()
+        .out_dir(out_dir.join("api"))
+        .file_descriptor_set_path(out_dir.join("api").join("proto_descriptor.bin"))
+        .extern_path(".common", "crate::common")
+        .extern_path(".gw", "crate::gw")
+        .compile_protos(
             &[
                 cs_dir.join("api").join("internal.proto").to_str().unwrap(),
                 cs_dir.join("api").join("user.proto").to_str().unwrap(),
@@ -233,13 +220,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .to_str()
                     .unwrap(),
                 cs_dir.join("api").join("relay.proto").to_str().unwrap(),
+                cs_dir.join("api").join("fuota.proto").to_str().unwrap(),
             ],
             &[
                 proto_dir.join("chirpstack").to_str().unwrap(),
                 proto_dir.join("google").to_str().unwrap(),
             ],
         )?;
-    }
 
     Ok(())
 }

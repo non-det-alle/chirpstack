@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::Cursor;
-use std::sync::RwLock;
+use std::sync::{LazyLock, RwLock};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -38,27 +38,26 @@ struct CommandLabels {
     command: String,
 }
 
-lazy_static! {
-    static ref EVENT_COUNTER: Family<EventLabels, Counter> = {
-        let counter = Family::<EventLabels, Counter>::default();
-        prometheus::register(
-            "gateway_backend_mqtt_events",
-            "Number of events received",
-            counter.clone(),
-        );
-        counter
-    };
-    static ref COMMAND_COUNTER: Family<CommandLabels, Counter> = {
-        let counter = Family::<CommandLabels, Counter>::default();
-        prometheus::register(
-            "gateway_backend_mqtt_commands",
-            "Number of commands sent",
-            counter.clone(),
-        );
-        counter
-    };
-    static ref GATEWAY_JSON: RwLock<HashMap<String, bool>> = RwLock::new(HashMap::new());
-}
+static EVENT_COUNTER: LazyLock<Family<EventLabels, Counter>> = LazyLock::new(|| {
+    let counter = Family::<EventLabels, Counter>::default();
+    prometheus::register(
+        "gateway_backend_mqtt_events",
+        "Number of events received",
+        counter.clone(),
+    );
+    counter
+});
+static COMMAND_COUNTER: LazyLock<Family<CommandLabels, Counter>> = LazyLock::new(|| {
+    let counter = Family::<CommandLabels, Counter>::default();
+    prometheus::register(
+        "gateway_backend_mqtt_commands",
+        "Number of commands sent",
+        counter.clone(),
+    );
+    counter
+});
+static GATEWAY_JSON: LazyLock<RwLock<HashMap<String, bool>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 pub struct MqttBackend<'a> {
     client: AsyncClient,
@@ -99,8 +98,8 @@ impl<'a> MqttBackend<'a> {
         // get client id, this will generate a random client_id when no client_id has been
         // configured.
         let client_id = if conf.client_id.is_empty() {
-            let mut rnd = rand::thread_rng();
-            let client_id: u64 = rnd.gen();
+            let mut rnd = rand::rng();
+            let client_id: u64 = rnd.random();
             format!("{:x}", client_id)
         } else {
             conf.client_id.clone()
@@ -363,16 +362,13 @@ async fn message_callback(
             if let Some(rx_info) = &mut event.rx_info {
                 set_gateway_json(&rx_info.gateway_id, json);
                 rx_info.ns_time = Some(Utc::now().into());
-                rx_info
-                    .metadata
-                    .insert("region_config_id".to_string(), region_config_id.to_string());
-                rx_info.metadata.insert(
-                    "region_common_name".to_string(),
-                    region_common_name.to_string(),
-                );
             }
 
-            tokio::spawn(uplink::deduplicate_uplink(event));
+            tokio::spawn(uplink::deduplicate_uplink(
+                region_common_name,
+                region_config_id.to_string(),
+                event,
+            ));
         } else if topic.ends_with("/stats") {
             EVENT_COUNTER
                 .get_or_create(&EventLabels {

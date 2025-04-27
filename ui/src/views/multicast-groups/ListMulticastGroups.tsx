@@ -60,7 +60,14 @@ function ListMulticastGroups(props: IProps) {
     },
   ];
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListMulticastGroupsRequest();
     req.setApplicationId(props.application.getId());
     req.setLimit(limit);

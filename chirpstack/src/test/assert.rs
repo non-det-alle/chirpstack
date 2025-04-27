@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::io::Cursor;
 use std::pin::Pin;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use prost::Message;
@@ -17,9 +18,7 @@ use crate::storage::{
 use chirpstack_api::{gw, integration as integration_pb, internal, stream};
 use lrwn::EUI64;
 
-lazy_static! {
-    static ref LAST_DOWNLINK_ID: RwLock<u32> = RwLock::new(0);
-}
+static LAST_DOWNLINK_ID: LazyLock<RwLock<u32>> = LazyLock::new(|| RwLock::new(0));
 
 pub type Validator = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
 
@@ -344,7 +343,7 @@ pub fn downlink_frame_saved(df: internal::DownlinkFrame) -> Validator {
     Box::new(move || {
         let df = df.clone();
         Box::pin(async move {
-            let mut df_get = downlink_frame::get(*LAST_DOWNLINK_ID.read().await)
+            let mut df_get = downlink_frame::get_and_del(*LAST_DOWNLINK_ID.read().await)
                 .await
                 .unwrap();
 

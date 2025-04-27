@@ -12,12 +12,14 @@ import type { GetPageCallbackFunc } from "../../components/DataTable";
 import DataTable from "../../components/DataTable";
 import TenantStore from "../../stores/TenantStore";
 import Admin from "../../components/Admin";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
 }
 
-function ListTenatUsers(props: IProps) {
+function ListTenantUsers(props: IProps) {
+  useTitle("Tenants", props.tenant.getName(), "Tenant users");
   const columns: ColumnsType<TenantUserListItem.AsObject> = [
     {
       title: "Email",
@@ -63,7 +65,14 @@ function ListTenatUsers(props: IProps) {
     },
   ];
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListTenantUsersRequest();
     req.setTenantId(props.tenant.getId());
     req.setLimit(limit);
@@ -107,4 +116,4 @@ function ListTenatUsers(props: IProps) {
   );
 }
 
-export default ListTenatUsers;
+export default ListTenantUsers;

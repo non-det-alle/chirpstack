@@ -262,6 +262,9 @@ message DeviceListItem {
 
   // Device status.
   DeviceStatus device_status = 9;
+
+  // Device tags.
+  map<string, string> tags = 10;
 }
 
 message DeviceKeys {
@@ -275,6 +278,11 @@ message DeviceKeys {
   // Application root key (128 bit).
   // Note: This field only needs to be set for LoRaWAN 1.1.x devices!
   string app_key = 3;
+
+  // Gen App Key (128 bit).
+  // Note: This field only needs to be set for LoRaWAN 1.0.x devices that
+  // implement TS005 (remote multicast setup).
+  string gen_app_key = 4;
 }
 
 message CreateDeviceRequest {
@@ -319,6 +327,7 @@ message DeleteDeviceRequest {
 
 message ListDevicesRequest {
   // Max number of devices to return in the result-set.
+  // If not set, it will be treated as 0, and the response will only return the total_count.
   uint32 limit = 1;
 
   // Offset in the result-set (for pagination).
@@ -332,6 +341,25 @@ message ListDevicesRequest {
 
   // Multicst-group ID (UUID) to filter devices on.
   string multicast_group_id = 5;
+
+  enum OrderBy {
+    NAME = 0;
+    DEV_EUI = 1;
+    LAST_SEEN_AT = 2;
+    DEVICE_PROFILE_NAME = 3;  
+  }
+
+  // If set, the given value will be used to sort by (optional).
+  OrderBy order_by = 6;
+
+  // If set, the sorting direction will be decending (default = ascending) (optional).
+  bool order_by_desc = 7;
+
+  // Tags to filter devices on.
+  map<string, string> tags = 8;
+
+  // Device-profile ID (UUID) to filter devices on.
+  string device_profile_id = 9;
 }
 
 message ListDevicesResponse {
@@ -539,6 +567,10 @@ message DeviceQueueItem {
   // the data payload. In this case, the f_cnt_down field must be set to
   // the corresponding frame-counter which has been used during the encryption.
   bool is_encrypted = 9;
+
+  // Expires at (optional).
+  // Expired queue-items will be automatically removed from the queue.
+  google.protobuf.Timestamp expires_at = 10;
 }
 
 message EnqueueDeviceQueueItemRequest { DeviceQueueItem queue_item = 1; }

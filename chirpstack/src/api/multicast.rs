@@ -47,7 +47,7 @@ impl MulticastGroupService for MulticastGroup {
             .await?;
 
         let mg = multicast::MulticastGroup {
-            application_id: app_id,
+            application_id: app_id.into(),
             name: req_mg.name.clone(),
             region: req_mg.region().from_proto(),
             mc_addr: DevAddr::from_str(&req_mg.mc_addr).map_err(|e| e.status())?,
@@ -154,7 +154,7 @@ impl MulticastGroupService for MulticastGroup {
             .await?;
 
         let _ = multicast::update(multicast::MulticastGroup {
-            id: mg_id,
+            id: mg_id.into(),
             name: req_mg.name.clone(),
             region: req_mg.region().from_proto(),
             mc_addr: DevAddr::from_str(&req_mg.mc_addr).map_err(|e| e.status())?,
@@ -408,9 +408,17 @@ impl MulticastGroupService for MulticastGroup {
             .await?;
 
         let f_cnt = downlink::multicast::enqueue(multicast::MulticastGroupQueueItem {
-            multicast_group_id: mg_id,
+            multicast_group_id: mg_id.into(),
             f_port: req_enq.f_port as i16,
             data: req_enq.data.clone(),
+            expires_at: if let Some(expires_at) = req_enq.expires_at {
+                let expires_at: std::time::SystemTime = expires_at
+                    .try_into()
+                    .map_err(|e: prost_types::TimestampError| e.status())?;
+                Some(expires_at.into())
+            } else {
+                None
+            },
             ..Default::default()
         })
         .await
@@ -478,6 +486,10 @@ impl MulticastGroupService for MulticastGroup {
                     f_cnt: qi.f_cnt as u32,
                     f_port: qi.f_port as u32,
                     data: qi.data.clone(),
+                    expires_at: qi.expires_at.map(|v| {
+                        let v: std::time::SystemTime = v.into();
+                        v.into()
+                    }),
                 });
             }
         }
@@ -778,6 +790,7 @@ pub mod test {
                 f_cnt: 31,
                 f_port: 10,
                 data: vec![1, 2, 3],
+                expires_at: None,
             },
             list_queue_resp.items[0]
         );

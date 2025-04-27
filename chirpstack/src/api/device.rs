@@ -64,8 +64,8 @@ impl DeviceService for Device {
 
         let d = device::Device {
             dev_eui,
-            application_id: app_id,
-            device_profile_id: dp_id,
+            application_id: app_id.into(),
+            device_profile_id: dp_id.into(),
             name: req_d.name.clone(),
             description: req_d.description.clone(),
             skip_fcnt_check: req_d.skip_fcnt_check,
@@ -191,8 +191,8 @@ impl DeviceService for Device {
         // update
         let _ = device::update(device::Device {
             dev_eui,
-            application_id: app_id,
-            device_profile_id: dp_id,
+            application_id: app_id.into(),
+            device_profile_id: dp_id.into(),
             name: req_d.name.clone(),
             description: req_d.description.clone(),
             skip_fcnt_check: req_d.skip_fcnt_check,
@@ -250,6 +250,11 @@ impl DeviceService for Device {
         } else {
             Some(Uuid::from_str(&req.multicast_group_id).map_err(|e| e.status())?)
         };
+        let dp_id: Option<Uuid> = if req.device_profile_id.is_empty() {
+            None
+        } else {
+            Some(Uuid::from_str(&req.device_profile_id).map_err(|e| e.status())?)
+        };
 
         self.validator
             .validate(
@@ -270,17 +275,25 @@ impl DeviceService for Device {
         let filters = device::Filters {
             application_id: Some(app_id),
             multicast_group_id: mg_id,
+            device_profile_id: dp_id,
             search: if req.search.is_empty() {
                 None
             } else {
                 Some(req.search.to_string())
             },
+            tags: req.tags.clone(),
         };
 
         let count = device::get_count(&filters).await.map_err(|e| e.status())?;
-        let items = device::list(req.limit as i64, req.offset as i64, &filters)
-            .await
-            .map_err(|e| e.status())?;
+        let items = device::list(
+            req.limit as i64,
+            req.offset as i64,
+            &filters,
+            req.order_by().from_proto(),
+            req.order_by_desc,
+        )
+        .await
+        .map_err(|e| e.status())?;
 
         let mut resp = Response::new(api::ListDevicesResponse {
             total_count: count as u32,
@@ -309,6 +322,7 @@ impl DeviceService for Device {
                         }),
                         false => None,
                     },
+                    tags: d.tags.into_hashmap(),
                 })
                 .collect(),
         });
@@ -340,11 +354,8 @@ impl DeviceService for Device {
         let dk = device_keys::DeviceKeys {
             dev_eui,
             nwk_key: AES128Key::from_str(&req_dk.nwk_key).map_err(|e| e.status())?,
-            app_key: if !req_dk.app_key.is_empty() {
-                AES128Key::from_str(&req_dk.app_key).map_err(|e| e.status())?
-            } else {
-                AES128Key::null()
-            },
+            app_key: AES128Key::from_str(&req_dk.app_key).map_err(|e| e.status())?,
+            gen_app_key: AES128Key::from_str(&req_dk.gen_app_key).map_err(|e| e.status())?,
             ..Default::default()
         };
 
@@ -378,6 +389,7 @@ impl DeviceService for Device {
                 dev_eui: dk.dev_eui.to_string(),
                 nwk_key: dk.nwk_key.to_string(),
                 app_key: dk.app_key.to_string(),
+                gen_app_key: dk.gen_app_key.to_string(),
             }),
             created_at: Some(helpers::datetime_to_prost_timestamp(&dk.created_at)),
             updated_at: Some(helpers::datetime_to_prost_timestamp(&dk.updated_at)),
@@ -414,11 +426,8 @@ impl DeviceService for Device {
             dev_nonces: dk.dev_nonces,
             join_nonce: dk.join_nonce,
             nwk_key: AES128Key::from_str(&req_dk.nwk_key).map_err(|e| e.status())?,
-            app_key: if !req_dk.app_key.is_empty() {
-                AES128Key::from_str(&req_dk.app_key).map_err(|e| e.status())?
-            } else {
-                AES128Key::null()
-            },
+            app_key: AES128Key::from_str(&req_dk.app_key).map_err(|e| e.status())?,
+            gen_app_key: AES128Key::from_str(&req_dk.gen_app_key).map_err(|e| e.status())?,
             ..Default::default()
         };
         let _ = device_keys::update(dk).await.map_err(|e| e.status())?;
@@ -469,7 +478,7 @@ impl DeviceService for Device {
             )
             .await?;
 
-        device_keys::set_dev_nonces(&dev_eui, &Vec::new())
+        device_keys::set_dev_nonces(dev_eui, &fields::DevNonces::default())
             .await
             .map_err(|e| e.status())?;
 
@@ -533,7 +542,7 @@ impl DeviceService for Device {
         dp.reset_session_to_boot_params(&mut ds);
 
         let mut device_changeset = device::DeviceChangeset {
-            device_session: Some(Some(ds)),
+            device_session: Some(Some(ds.into())),
             dev_addr: Some(Some(dev_addr)),
             secondary_dev_addr: Some(None),
             ..Default::default()
@@ -1085,13 +1094,21 @@ impl DeviceService for Device {
         }
 
         let qi = device_queue::DeviceQueueItem {
-            id: Uuid::new_v4(),
+            id: Uuid::new_v4().into(),
             dev_eui,
             f_port: req_qi.f_port as i16,
             confirmed: req_qi.confirmed,
             is_encrypted: req_qi.is_encrypted,
             f_cnt_down: if req_qi.is_encrypted {
                 Some(req_qi.f_cnt_down.into())
+            } else {
+                None
+            },
+            expires_at: if let Some(expires_at) = req_qi.expires_at {
+                let expires_at: std::time::SystemTime = expires_at
+                    .try_into()
+                    .map_err(|e: prost_types::TimestampError| e.status())?;
+                Some(expires_at.into())
             } else {
                 None
             },
@@ -1169,6 +1186,10 @@ impl DeviceService for Device {
                     is_pending: qi.is_pending,
                     f_cnt_down: qi.f_cnt_down.unwrap_or(0) as u32,
                     is_encrypted: qi.is_encrypted,
+                    expires_at: qi.expires_at.map(|v| {
+                        let v: std::time::SystemTime = v.into();
+                        v.into()
+                    }),
                 })
                 .collect(),
         });
@@ -1350,6 +1371,9 @@ pub mod test {
                 multicast_group_id: "".into(),
                 limit: 10,
                 offset: 0,
+                order_by: api::list_devices_request::OrderBy::Name.into(),
+                order_by_desc: true,
+                ..Default::default()
             },
         );
         let list_resp = service.list(list_req).await.unwrap();
@@ -1364,6 +1388,7 @@ pub mod test {
                     dev_eui: "0102030405060708".into(),
                     nwk_key: "01020304050607080102030405060708".into(),
                     app_key: "02020304050607080202030405060708".into(),
+                    gen_app_key: "03020304050607080202030405060708".into(),
                 }),
             },
         );
@@ -1382,6 +1407,7 @@ pub mod test {
                 dev_eui: "0102030405060708".into(),
                 nwk_key: "01020304050607080102030405060708".into(),
                 app_key: "02020304050607080202030405060708".into(),
+                gen_app_key: "03020304050607080202030405060708".into(),
             }),
             get_keys_resp.get_ref().device_keys
         );
@@ -1394,6 +1420,7 @@ pub mod test {
                     dev_eui: "0102030405060708".into(),
                     nwk_key: "01020304050607080102030405060708".into(),
                     app_key: "03020304050607080302030405060708".into(),
+                    gen_app_key: "03020304050607080202030405060708".into(),
                 }),
             },
         );
@@ -1412,15 +1439,19 @@ pub mod test {
                 dev_eui: "0102030405060708".into(),
                 nwk_key: "01020304050607080102030405060708".into(),
                 app_key: "03020304050607080302030405060708".into(),
+                gen_app_key: "03020304050607080202030405060708".into(),
             }),
             get_keys_resp.get_ref().device_keys
         );
 
         // flush dev nonces
-        let _ =
-            device_keys::set_dev_nonces(&EUI64::from_str("0102030405060708").unwrap(), &[1, 2, 3])
-                .await
-                .unwrap();
+        let _ = device_keys::set_dev_nonces(EUI64::from_str("0102030405060708").unwrap(), &{
+            let mut dev_nonces = fields::DevNonces::default();
+            dev_nonces.insert(EUI64::from_str("0102030405060708").unwrap(), 123);
+            dev_nonces
+        })
+        .await
+        .unwrap();
         let flush_dev_nonces_req = get_request(
             &u.id,
             api::FlushDevNoncesRequest {
@@ -1434,7 +1465,7 @@ pub mod test {
         let dk = device_keys::get(&EUI64::from_str("0102030405060708").unwrap())
             .await
             .unwrap();
-        assert_eq!(0, dk.dev_nonces.len());
+        assert_eq!(fields::DevNonces::default(), dk.dev_nonces);
 
         // delete keys
         let del_keys_req = get_request(
@@ -1539,11 +1570,14 @@ pub mod test {
             dev.dev_eui,
             &device::DeviceChangeset {
                 dev_addr: Some(Some(DevAddr::from_be_bytes([1, 2, 3, 4]))),
-                device_session: Some(Some(internal::DeviceSession {
-                    dev_addr: vec![1, 2, 3, 4],
-                    js_session_key_id: vec![8, 7, 6, 5, 4, 3, 2, 1],
-                    ..Default::default()
-                })),
+                device_session: Some(Some(
+                    internal::DeviceSession {
+                        dev_addr: vec![1, 2, 3, 4],
+                        js_session_key_id: vec![8, 7, 6, 5, 4, 3, 2, 1],
+                        ..Default::default()
+                    }
+                    .into(),
+                )),
                 ..Default::default()
             },
         )
@@ -1568,14 +1602,17 @@ pub mod test {
         device::partial_update(
             dev.dev_eui,
             &device::DeviceChangeset {
-                device_session: Some(Some(internal::DeviceSession {
-                    dev_addr: vec![1, 2, 3, 4],
-                    app_s_key: Some(common::KeyEnvelope {
-                        kek_label: "test-key".into(),
-                        aes_key: vec![8, 7, 6, 5, 4, 3, 2, 1, 8, 7, 6, 5, 4, 3, 2, 1],
-                    }),
-                    ..Default::default()
-                })),
+                device_session: Some(Some(
+                    internal::DeviceSession {
+                        dev_addr: vec![1, 2, 3, 4],
+                        app_s_key: Some(common::KeyEnvelope {
+                            kek_label: "test-key".into(),
+                            aes_key: vec![8, 7, 6, 5, 4, 3, 2, 1, 8, 7, 6, 5, 4, 3, 2, 1],
+                        }),
+                        ..Default::default()
+                    }
+                    .into(),
+                )),
                 ..Default::default()
             },
         )

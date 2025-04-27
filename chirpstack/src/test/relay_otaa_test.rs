@@ -6,10 +6,11 @@ use super::assert;
 use crate::storage::{
     application,
     device::{self, DeviceClass},
-    device_keys, device_profile, gateway, tenant,
+    device_keys, device_profile, fields, gateway, tenant,
 };
 use crate::{gateway::backend as gateway_backend, integration, test, uplink};
 use chirpstack_api::{common, gw, internal};
+use lrwn::region::CommonName;
 use lrwn::{AES128Key, DevAddr, EUI64};
 
 #[tokio::test]
@@ -65,7 +66,10 @@ async fn test_lorawan_10() {
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_2,
         reg_params_revision: lrwn::region::Revision::A,
         supports_otaa: true,
-        is_relay: true,
+        relay_params: Some(fields::RelayParams {
+            is_relay: true,
+            ..Default::default()
+        }),
         ..Default::default()
     })
     .await
@@ -97,19 +101,22 @@ async fn test_lorawan_10() {
         dev_eui: EUI64::from_be_bytes([1, 1, 1, 1, 1, 1, 1, 2]),
         enabled_class: DeviceClass::A,
         dev_addr: Some(DevAddr::from_be_bytes([4, 3, 2, 1])),
-        device_session: Some(internal::DeviceSession {
-            mac_version: common::MacVersion::Lorawan102.into(),
-            dev_addr: vec![4, 3, 2, 1],
-            f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            f_cnt_up: 10,
-            n_f_cnt_down: 5,
-            rx1_delay: 1,
-            rx2_frequency: 869525000,
-            region_config_id: "eu868".into(),
-            ..Default::default()
-        }),
+        device_session: Some(
+            internal::DeviceSession {
+                mac_version: common::MacVersion::Lorawan102.into(),
+                dev_addr: vec![4, 3, 2, 1],
+                f_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                s_nwk_s_int_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                nwk_s_enc_key: vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+                f_cnt_up: 10,
+                n_f_cnt_down: 5,
+                rx1_delay: 1,
+                rx2_frequency: 869525000,
+                region_config_id: "eu868".into(),
+                ..Default::default()
+            }
+            .into(),
+        ),
         ..Default::default()
     })
     .await
@@ -117,17 +124,11 @@ async fn test_lorawan_10() {
 
     let ds_relay = dev_relay.get_device_session().unwrap();
 
-    let mut rx_info = gw::UplinkRxInfo {
+    let rx_info = gw::UplinkRxInfo {
         gateway_id: gw.gateway_id.to_string(),
         location: Some(Default::default()),
         ..Default::default()
     };
-    rx_info
-        .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -218,6 +219,8 @@ async fn test_lorawan_10() {
         .unwrap();
 
     uplink::handle_uplink(
+        CommonName::EU868,
+        "eu868",
         Uuid::new_v4(),
         gw::UplinkFrameSet {
             phy_payload: phy_relay_jr.to_vec().unwrap(),
@@ -289,7 +292,6 @@ async fn test_lorawan_10() {
                 enabled_uplink_channel_indices: vec![0, 1, 2],
                 nb_trans: 1,
                 region_config_id: "eu868".to_string(),
-                class_b_ping_slot_nb: 1,
                 ..Default::default()
             },
         ),

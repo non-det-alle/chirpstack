@@ -182,7 +182,7 @@ impl TxAck {
 
     async fn get_downlink_frame(&mut self) -> Result<()> {
         trace!("Get downlink-frame from Redis");
-        let df = downlink_frame::get(self.downlink_id).await?;
+        let df = downlink_frame::get_and_del(self.downlink_id).await?;
         let gw_df = &df
             .downlink_frame
             .as_ref()
@@ -282,8 +282,12 @@ impl TxAck {
         qi.is_pending = true;
 
         if dev.enabled_class == DeviceClass::C {
-            let timeout =
-                Utc::now() + Duration::try_seconds(dp.class_c_timeout as i64).unwrap_or_default();
+            let timeout_sec = dp
+                .class_c_params
+                .as_ref()
+                .map(|v| v.timeout)
+                .unwrap_or_default() as i64;
+            let timeout = Utc::now() + Duration::try_seconds(timeout_sec).unwrap_or_default();
             qi.timeout_after = Some(timeout);
         }
 
@@ -434,7 +438,7 @@ impl TxAck {
             ..Default::default()
         };
 
-        integration::log_event(app.id, &dev.variables, &pl).await;
+        integration::log_event(app.id.into(), &dev.variables, &pl).await;
 
         Ok(())
     }
@@ -483,7 +487,7 @@ impl TxAck {
             tx_info: self.downlink_frame_item.as_ref().unwrap().tx_info.clone(),
         };
 
-        integration::txack_event(app.id, &dev.variables, &pl).await;
+        integration::txack_event(app.id.into(), &dev.variables, &pl).await;
 
         Ok(())
     }
@@ -532,7 +536,7 @@ impl TxAck {
             tx_info: self.downlink_frame_item.as_ref().unwrap().tx_info.clone(),
         };
 
-        integration::txack_event(app.id, &dev.variables, &pl).await;
+        integration::txack_event(app.id.into(), &dev.variables, &pl).await;
 
         Ok(())
     }

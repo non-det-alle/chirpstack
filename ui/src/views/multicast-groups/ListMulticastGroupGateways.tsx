@@ -43,7 +43,14 @@ function ListMulticastGroupGateways(props: IProps) {
     setSelectedRowIds(ids);
   };
 
-  const getPage = (limit: number, offset: number, callbackFunc: GetPageCallbackFunc) => {
+  const getPage = (
+    limit: number,
+    offset: number,
+    _filters: object,
+    orderBy: string | void,
+    orderByDesc: boolean | void,
+    callbackFunc: GetPageCallbackFunc,
+  ) => {
     const req = new ListGatewaysRequest();
     req.setTenantId(props.application.getTenantId());
     req.setMulticastGroupId(props.multicastGroup.getId());

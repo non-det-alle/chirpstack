@@ -1,4 +1,4 @@
-use handlebars::{no_escape, Handlebars};
+use handlebars::Handlebars;
 
 use super::super::config;
 
@@ -15,13 +15,15 @@ pub fn run() {
   #   * INFO
   #   * WARN
   #   * ERROR
-  #   * OFF
   level="{{ logging.level }}"
 
   # Log as JSON.
   json={{ logging.json }}
 
+
 # PostgreSQL configuration.
+#
+# Note: this option is only available to ChirpStack with PostgreSQL support (default).
 [postgresql]
 
   # PostgreSQL DSN.
@@ -46,6 +48,38 @@ pub fn run() {
   # the server-certificate is not signed by a CA in the platform certificate
   # store.
   ca_cert="{{ postgresql.ca_cert }}"
+
+
+# SQLite configuration.
+#
+# Note: this option is only available to ChirpStack with SQLite support.
+[sqlite]
+
+  # Sqlite DB path.
+  #
+  # Make sure the path exists and that the ChirpStack process has read-write
+  # access to it. If the database file does not exists, it will be created the
+  # first time ChirpStack starts.
+  #
+  # Format example: sqlite:///<DATABASE>.
+  path="{{ sqlite.path }}"
+
+  # Max open connections.
+  #
+  # This sets the max. number of open connections that are allowed in the
+  # SQLite connection pool.
+  max_open_connections={{ sqlite.max_open_connections }}
+
+  # PRAGMAs.
+  #
+  # This configures the list of PRAGMAs that are executed to prepare the
+  # SQLite library. For a full list of available PRAGMAs see:
+  # https://www.sqlite.org/pragma.html
+  pragmas=[
+    {{#each sqlite.pragmas}}
+    "{{this}}",
+    {{/each}}
+  ]
 
 
 # Redis configuration.
@@ -763,6 +797,11 @@ pub fn run() {
     #   #
     #   # Set this to enable client-certificate authentication with the join-server.
     #   tls_key="/path/to/tls_key.pem"
+
+    #   # Authorization header.
+    #   #
+    #   # Optional value of the Authorization header, e.g. token or password.
+    #   authorization_header="Bearer sometoken"
     {{#each join_server.servers}}
 
     [[join_server.servers]]
@@ -773,6 +812,7 @@ pub fn run() {
       ca_cert="{{ this.ca_cert }}"
       tls_cert="{{ this.tls_cert }}"
       tls_key="{{ this.tls_key }}"
+      authorization_header="{{ this.authorization_header }}"
     {{/each}}
 
 
@@ -944,6 +984,7 @@ pub fn run() {
   kek="{{ this.kek }}"
 {{/each}}
 
+
 # UI configuration.
 [ui]
   # Tileserver URL.
@@ -961,7 +1002,7 @@ pub fn run() {
 "#;
 
     let mut reg = Handlebars::new();
-    reg.register_escape_fn(no_escape);
+    reg.register_escape_fn(|s| s.to_string().replace('"', r#"\""#));
     let conf = config::get();
     println!(
         "{}",

@@ -11,7 +11,7 @@ use super::auth::validator;
 use super::error::ToStatus;
 use super::helpers;
 use crate::region;
-use crate::storage::{self, device_config_store};
+use crate::storage::{device, device_config_store};
 
 pub struct DeviceConfigStore {
     validator: validator::RequestValidator,
@@ -48,7 +48,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         // upsert
         let _ = device_config_store::upsert(device_config_store::DeviceConfigStore {
             dev_eui,
-            chmask_config: req_dcs.chmask_config.clone(),
+            chmask_config: req_dcs.chmask_config.as_ref().map(|c| c.into()),
             ..Default::default()
         })
         .await
@@ -79,7 +79,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         Ok(Response::new(api::GetDeviceConfigStoreResponse {
             device_config_store: Some(api::DeviceConfigStore {
                 dev_eui: dcs.dev_eui.to_string(),
-                chmask_config: dcs.chmask_config,
+                chmask_config: dcs.chmask_config.as_deref().cloned(),
             }),
             created_at: Some(helpers::datetime_to_prost_timestamp(&dcs.created_at)),
             updated_at: Some(helpers::datetime_to_prost_timestamp(&dcs.updated_at)),
@@ -181,9 +181,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             .await?;
 
         let channels = {
-            let d = storage::device::get(&dev_eui)
-                .await
-                .map_err(|e| e.status())?;
+            let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
 
             let ds = d.get_device_session().map_err(|e| e.status())?;
 
@@ -231,6 +229,7 @@ pub mod test {
 
     use super::*;
     use crate::api::auth;
+    use crate::storage::{api_key, application, device_profile};
     use crate::test;
     use chirpstack_api::internal;
 
@@ -239,22 +238,25 @@ pub mod test {
         let _guard = test::prepare().await;
 
         // setup admin key
-        let key = storage::api_key::test::create_api_key(true, false).await;
+        let key = api_key::test::create_api_key(true, false).await;
 
         // create device
         let d = {
-            let dp = storage::device_profile::test::create_device_profile(None).await;
-            let app = storage::application::test::create_application(Some(dp.tenant_id)).await;
-            storage::device::create(storage::device::Device {
+            let dp = device_profile::test::create_device_profile(None).await;
+            let app = application::test::create_application(Some(dp.tenant_id.into())).await;
+            device::create(device::Device {
                 name: "test-dev".into(),
                 dev_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
                 application_id: app.id,
                 device_profile_id: dp.id,
-                device_session: Some(internal::DeviceSession {
-                    region_config_id: "eu868".into(),
-                    enabled_uplink_channel_indices: vec![0, 2],
-                    ..Default::default()
-                }),
+                device_session: Some(
+                    internal::DeviceSession {
+                        region_config_id: "eu868".into(),
+                        enabled_uplink_channel_indices: vec![0, 2],
+                        ..Default::default()
+                    }
+                    .into(),
+                ),
                 ..Default::default()
             })
         }

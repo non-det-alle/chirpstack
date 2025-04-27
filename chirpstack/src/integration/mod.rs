@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -28,15 +29,16 @@ pub mod mock;
 mod mqtt;
 mod mydevices;
 mod pilot_things;
+#[cfg(feature = "postgres")]
 mod postgresql;
 mod redis;
 mod thingsboard;
 
-lazy_static! {
-    static ref GLOBAL_INTEGRATIONS: RwLock<Vec<Box<dyn Integration + Sync + Send>>> =
-        RwLock::new(Vec::new());
-    static ref MOCK_INTEGRATION: RwLock<bool> = RwLock::new(false);
-}
+static GLOBAL_INTEGRATIONS: LazyLock<RwLock<Vec<Box<dyn Integration + Sync + Send>>>> =
+    LazyLock::new(|| RwLock::new(Vec::new()));
+
+#[cfg(test)]
+static MOCK_INTEGRATION: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(false));
 
 pub async fn setup() -> Result<()> {
     info!("Setting up global integrations");
@@ -54,6 +56,7 @@ pub async fn setup() -> Result<()> {
                         .context("Setup MQTT integration")?,
                 ));
             }
+            #[cfg(feature = "postgres")]
             "postgresql" => integrations.push(Box::new(
                 postgresql::Integration::new(&conf.integration.postgresql)
                     .await
@@ -533,7 +536,7 @@ async fn handle_down_command(application_id: String, pl: integration::DownlinkCo
         // Validate that the application_id from the topic is indeed the application ID to which
         // the device belongs.
         let dev = device::get(&dev_eui).await?;
-        if dev.application_id != app_id {
+        if Into::<Uuid>::into(dev.application_id) != app_id {
             return Err(anyhow!(
                 "Application ID from topic does not match application ID from device"
             ));
@@ -555,8 +558,8 @@ async fn handle_down_command(application_id: String, pl: integration::DownlinkCo
 
         let qi = device_queue::DeviceQueueItem {
             id: match pl.id.is_empty() {
-                true => Uuid::new_v4(),
-                false => Uuid::from_str(&pl.id)?,
+                true => Uuid::new_v4().into(),
+                false => Uuid::from_str(&pl.id)?.into(),
             },
             f_port: pl.f_port as i16,
             confirmed: pl.confirmed,

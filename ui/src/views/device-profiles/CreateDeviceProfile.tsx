@@ -5,12 +5,17 @@ import { PageHeader } from "@ant-design/pro-layout";
 
 import { MacVersion, RegParamsRevision } from "@chirpstack/chirpstack-api-grpc-web/common/common_pb";
 import type { CreateDeviceProfileResponse } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
-import { DeviceProfile, CreateDeviceProfileRequest } from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
+import {
+  DeviceProfile,
+  CreateDeviceProfileRequest,
+  AppLayerParams,
+} from "@chirpstack/chirpstack-api-grpc-web/api/device_profile_pb";
 
 import type { Tenant } from "@chirpstack/chirpstack-api-grpc-web/api/tenant_pb";
 
 import DeviceProfileForm from "./DeviceProfileForm";
 import DeviceProfileStore from "../../stores/DeviceProfileStore";
+import { useTitle } from "../helpers";
 
 interface IProps {
   tenant: Tenant;
@@ -18,6 +23,7 @@ interface IProps {
 
 function CreateDeviceProfile(props: IProps) {
   const navigate = useNavigate();
+  useTitle("Tenants", props.tenant.getName(), "Device profiles", "Add");
 
   const onFinish = (obj: DeviceProfile) => {
     obj.setTenantId(props.tenant.getId());
@@ -74,6 +80,12 @@ function encodeDownlink(input) {
   deviceProfile.setRegParamsRevision(RegParamsRevision.A);
   deviceProfile.setFlushQueueOnActivate(true);
   deviceProfile.setAutoDetectMeasurements(true);
+
+  const appLayer = new AppLayerParams();
+  appLayer.setTs003FPort(202);
+  appLayer.setTs004FPort(201);
+  appLayer.setTs005FPort(200);
+  deviceProfile.setAppLayerParams(appLayer);
 
   return (
     <Space direction="vertical" style={{ width: "100%" }} size="large">

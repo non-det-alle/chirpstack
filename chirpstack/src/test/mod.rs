@@ -1,5 +1,5 @@
 use std::env;
-use std::sync::{Mutex, Once};
+use std::sync::{LazyLock, Mutex, Once};
 
 use crate::{adr, config, region, storage};
 
@@ -17,9 +17,7 @@ mod relay_otaa_test;
 
 static TRACING_INIT: Once = Once::new();
 
-lazy_static! {
-    static ref TEST_MUX: Mutex<()> = Mutex::new(());
-}
+static TEST_MUX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 pub async fn prepare<'a>() -> std::sync::MutexGuard<'a, ()> {
     dotenv::dotenv().ok();
@@ -39,6 +37,7 @@ pub async fn prepare<'a>() -> std::sync::MutexGuard<'a, ()> {
     let mut conf: config::Configuration = Default::default();
     conf.postgresql.dsn = env::var("TEST_POSTGRESQL_DSN").unwrap();
     conf.redis.servers = vec![env::var("TEST_REDIS_URL").unwrap()];
+    conf.sqlite.path = ":memory:".to_string();
     conf.network.enabled_regions = vec!["eu868".to_string()];
     conf.regions = vec![config::Region {
         id: "eu868".to_string(),
