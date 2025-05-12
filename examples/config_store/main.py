@@ -70,9 +70,9 @@ if __name__ == "__main__":
             uplink_channels = resp.channels
         print(f"Available uplink channels: {uplink_channels}\n")
 
-        # Create chmask config
-        resp = client.Create(
-            api.CreateDeviceConfigStoreRequest(
+        # Set chmask config
+        resp = client.Set(
+            api.SetDeviceConfigStoreRequest(
                 device_config_store=api.DeviceConfigStore(
                     dev_eui=dev_eui,
                     chmask_config=api.ChMaskConfig(
@@ -82,7 +82,7 @@ if __name__ == "__main__":
             ),
             metadata=auth_token,
         )
-        print(f"Create response: {resp}\n")
+        print(f"Set response: {resp}\n")
 
         resp = client.Get(
             api.GetDeviceConfigStoreRequest(dev_eui=dev_eui),
