@@ -111,7 +111,7 @@ pub async fn get_count(application_id: &Option<Uuid>) -> Result<i64, Error> {
         .into_boxed();
 
     if let Some(application_id) = application_id {
-        q = q.filter(device::application_id.eq(application_id));
+        q = q.filter(device::application_id.eq(fields::Uuid::from(application_id)));
     }
 
     Ok(q.first(&mut get_async_db_conn().await?).await?)
@@ -133,7 +133,7 @@ pub async fn list(
         .into_boxed();
 
     if let Some(application_id) = application_id {
-        q = q.filter(device::application_id.eq(application_id));
+        q = q.filter(device::application_id.eq(fields::Uuid::from(application_id)));
     }
 
     q.order_by(device_config_store::dev_eui)

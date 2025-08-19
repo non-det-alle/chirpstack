@@ -1538,13 +1538,18 @@ impl Validator for ValidateDeviceConfigStoresAccess {
             // admin api key
             // tenant api key
             Flag::List => {
-                q = q.filter(api_key::dsl::is_admin.eq(true).or(dsl::exists(
-                    application::dsl::application.filter(
-                        application::dsl::id.eq(&self.application_id).and(
-                            api_key::dsl::tenant_id.eq(application::dsl::tenant_id.nullable()),
+                q = q.filter(
+                    api_key::dsl::is_admin.eq(true).or(dsl::exists(
+                        application::dsl::application.filter(
+                            application::dsl::id
+                                .eq(fields::Uuid::from(&self.application_id))
+                                .and(
+                                    api_key::dsl::tenant_id
+                                        .eq(application::dsl::tenant_id.nullable()),
+                                ),
                         ),
-                    ),
-                )));
+                    )),
+                );
             }
             _ => {
                 return Ok(0);
