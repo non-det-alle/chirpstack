@@ -142,7 +142,7 @@ diesel::table! {
         supports_class_b -> Bool,
         supports_class_c -> Bool,
         class_b_timeout -> Integer,
-        class_b_ping_slot_nb_k -> Integer,
+        class_b_ping_slot_periodicity -> Integer,
         class_b_ping_slot_dr -> SmallInt,
         class_b_ping_slot_freq -> BigInt,
         class_c_timeout -> Integer,
@@ -187,7 +187,7 @@ diesel::table! {
         multicast_group_type -> Text,
         multicast_class_c_scheduling_type -> Text,
         multicast_dr -> SmallInt,
-        multicast_class_b_ping_slot_nb_k -> SmallInt,
+        multicast_class_b_ping_slot_periodicity -> SmallInt,
         multicast_frequency -> BigInt,
         multicast_timeout -> SmallInt,
         multicast_session_start -> Nullable<TimestamptzSqlite>,
@@ -275,7 +275,7 @@ diesel::table! {
         group_type -> Text,
         dr -> SmallInt,
         frequency -> BigInt,
-        class_b_ping_slot_nb_k -> SmallInt,
+        class_b_ping_slot_periodicity -> SmallInt,
         class_c_scheduling_type -> Text,
     }
 }

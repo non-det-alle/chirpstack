@@ -17,4 +17,5 @@ api:
 		api/multicast_group.proto \
 		api/relay.proto \
 		api/tenant.proto \
-		api/user.proto 
+		api/user.proto \
+		api/fuota.proto

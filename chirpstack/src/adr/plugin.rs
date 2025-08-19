@@ -2,9 +2,10 @@ use std::fs;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use rquickjs::CatchResultExt;
 
 use super::{Handler, Request, Response};
+
+use rquickjs::CatchResultExt;
 
 pub struct Plugin {
     script: String,
@@ -21,15 +22,32 @@ impl Plugin {
         let (id, name) = ctx.with::<_, Result<(String, String)>>(|ctx| {
             let m = rquickjs::Module::declare(ctx.clone(), "script", script.clone())
                 .catch(&ctx)
-                .map_err(|e| anyhow!("JS error: {}", e))
-                .context("Declare script")?;
-            let (m, m_promise) = m.eval().context("Evaluate script")?;
-            () = m_promise.finish()?;
-            let id_func: rquickjs::Function = m.get("id").context("Get id function")?;
-            let name_func: rquickjs::Function = m.get("name").context("Get name function")?;
+                .map_err(|e| anyhow!("Declare script: JS error: {}", e))?;
+            let (m, m_promise) = m
+                .eval()
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Evaluate script: JS error: {}", e))?;
+            () = m_promise
+                .finish()
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Evaluate script: JS error: {}", e))?;
+            let id_func: rquickjs::Function = m
+                .get("id")
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Get id function: JS error: {}", e))?;
+            let name_func: rquickjs::Function = m
+                .get("name")
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Get name function: JS error: {}", e))?;
 
-            let id: String = id_func.call(()).context("Call id function")?;
-            let name: String = name_func.call(()).context("Call name function")?;
+            let id: String = id_func
+                .call(())
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Call id function: JS error: {}", e))?;
+            let name: String = name_func
+                .call(())
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Call name function: JS error: {}", e))?;
 
             Ok((id, name))
         })?;
@@ -56,10 +74,17 @@ impl Handler for Plugin {
 
         ctx.with::<_, Result<Response>>(|ctx| {
             let m = rquickjs::Module::declare(ctx.clone(), "script", self.script.clone())
-                .context("Declare script")?;
-            let (m, m_promise) = m.eval().context("Evaluate script")?;
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Declare script: JS error: {}", e))?;
+            let (m, m_promise) = m
+                .eval()
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Eval script: JS error: {}", e))?;
             () = m_promise.finish()?;
-            let func: rquickjs::Function = m.get("handle").context("Get handle function")?;
+            let func: rquickjs::Function = m
+                .get("handle")
+                .catch(&ctx)
+                .map_err(|e| anyhow!("Get handle function: JS error: {}", e))?;
 
             let device_variables = rquickjs::Object::new(ctx.clone())?;
             for (k, v) in &req.device_variables {
@@ -101,15 +126,21 @@ impl Handler for Plugin {
             let res: rquickjs::Object = func
                 .call((input,))
                 .catch(&ctx)
-                .map_err(|e| anyhow!("JS error: {}", e))
-                .context("Call handle function")?;
+                .map_err(|e| anyhow!("Call handle function: JS error: {}", e))?;
 
             Ok(Response {
-                dr: res.get("dr").context("Get dr response")?,
+                dr: res
+                    .get("dr")
+                    .catch(&ctx)
+                    .map_err(|e| anyhow!("Get dr response: JS error: {}", e))?,
                 tx_power_index: res
                     .get("txPowerIndex")
-                    .context("Get txPowerIndex response")?,
-                nb_trans: res.get("nbTrans").context("Get nbTrans response")?,
+                    .catch(&ctx)
+                    .map_err(|e| anyhow!("Get txPowerIndex response: JS error: {}", e))?,
+                nb_trans: res
+                    .get("nbTrans")
+                    .catch(&ctx)
+                    .map_err(|e| anyhow!("Get nbTrans response: JS error: {}", e))?,
             })
         })
     }
