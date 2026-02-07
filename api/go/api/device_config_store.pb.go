@@ -862,14 +862,14 @@ const file_api_device_config_store_proto_rawDesc = "" +
 	"\bchannels\x18\x01 \x03(\v2/.api.GetAvailableChannelsResponse.ChannelsEntryR\bchannels\x1aU\n" +
 	"\rChannelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\rR\x03key\x12.\n" +
-	"\x05value\x18\x02 \x01(\v2\x18.api.DeviceUplinkChannelR\x05value:\x028\x012\xc7\x06\n" +
+	"\x05value\x18\x02 \x01(\v2\x18.api.DeviceUplinkChannelR\x05value:\x028\x012\xca\x06\n" +
 	"\x18DeviceConfigStoreService\x12\x83\x01\n" +
 	"\x03Set\x12 .api.SetDeviceConfigStoreRequest\x1a\x16.google.protobuf.Empty\"B\x82\xd3\xe4\x93\x02<:\x01*\x1a7/api/device_config_stores/{device_config_store.dev_eui}\x12w\n" +
 	"\x03Get\x12 .api.GetDeviceConfigStoreRequest\x1a!.api.GetDeviceConfigStoreResponse\"+\x82\xd3\xe4\x93\x02%\x12#/api/device_config_stores/{dev_eui}\x12r\n" +
 	"\x06Delete\x12#.api.DeleteDeviceConfigStoreRequest\x1a\x16.google.protobuf.Empty\"+\x82\xd3\xe4\x93\x02%*#/api/device_config_stores/{dev_eui}\x12r\n" +
 	"\x04List\x12\".api.ListDeviceConfigStoresRequest\x1a#.api.ListDeviceConfigStoresResponse\"!\x82\xd3\xe4\x93\x02\x1b\x12\x19/api/device_config_stores\x12\x9b\x01\n" +
-	"\x17GetConfigStoreAlignment\x12#.api.GetConfigStoreAlignmentRequest\x1a$.api.GetConfigStoreAlignmentResponse\"5\x82\xd3\xe4\x93\x02/\x12-/api/device_config_stores/{dev_eui}/alignment\x12\xa5\x01\n" +
-	"\x1aGetAvailableUplinkChannels\x12 .api.GetAvailableChannelsRequest\x1a!.api.GetAvailableChannelsResponse\"B\x82\xd3\xe4\x93\x02<\x12:/api/device_config_stores/{dev_eui}/usable_uplink_channelsB\x9c\x01\n" +
+	"\x17GetConfigStoreAlignment\x12#.api.GetConfigStoreAlignmentRequest\x1a$.api.GetConfigStoreAlignmentResponse\"5\x82\xd3\xe4\x93\x02/\x12-/api/device_config_stores/{dev_eui}/alignment\x12\xa8\x01\n" +
+	"\x1aGetAvailableUplinkChannels\x12 .api.GetAvailableChannelsRequest\x1a!.api.GetAvailableChannelsResponse\"E\x82\xd3\xe4\x93\x02?\x12=/api/device_config_stores/{dev_eui}/available_uplink_channelsB\x9c\x01\n" +
 	"\x11io.chirpstack.apiB\x16DeviceConfigStoreProtoP\x01Z.github.com/chirpstack/chirpstack/api/go/v4/api\xaa\x02\x0eChirpstack.Api\xca\x02\x0eChirpstack\\Api\xe2\x02\x1aGPBMetadata\\Chirpstack\\Apib\x06proto3"
 
 var (

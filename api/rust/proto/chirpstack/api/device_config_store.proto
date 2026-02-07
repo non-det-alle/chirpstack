@@ -63,7 +63,7 @@ service DeviceConfigStoreService {
     rpc GetAvailableUplinkChannels(GetAvailableChannelsRequest)
         returns (GetAvailableChannelsResponse) {
         option (google.api.http) = {
-            get : "/api/device_config_stores/{dev_eui}/usable_uplink_channels"
+            get : "/api/device_config_stores/{dev_eui}/available_uplink_channels"
         };
     }
 }
