@@ -69,7 +69,7 @@ diesel::table! {
         dev_eui -> Binary,
         created_at -> TimestamptzSqlite,
         updated_at -> TimestamptzSqlite,
-        chmask_config -> Nullable<Binary>,
+        chmask_config -> Binary,
         dr -> Nullable<SmallInt>,
         tx_power_index -> Nullable<SmallInt>,
         nb_trans -> Nullable<SmallInt>,

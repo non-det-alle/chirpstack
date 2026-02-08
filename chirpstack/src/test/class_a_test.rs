@@ -12,7 +12,7 @@ use crate::storage::{
     tenant,
 };
 use crate::{config, gateway::backend as gateway_backend, integration, region, test, uplink};
-use chirpstack_api::{api, common, gw, integration as integration_pb, internal, stream};
+use chirpstack_api::{common, gw, integration as integration_pb, internal, stream};
 use lrwn::region::CommonName;
 use lrwn::{AES128Key, DevAddr, EUI64};
 
@@ -5633,12 +5633,7 @@ async fn test_lorawan_10_config_store() {
                 Box::pin(async move {
                     device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
-                        chmask_config: Some(
-                            api::ChMaskConfig {
-                                enabled_uplink_channel_indices: vec![0, 1, 2],
-                            }
-                            .into(),
-                        ),
+                        chmask_config: vec![0, 1, 2].into(),
                         ..Default::default()
                     })
                     .await
@@ -5670,12 +5665,7 @@ async fn test_lorawan_10_config_store() {
                 Box::pin(async move {
                     device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
-                        chmask_config: Some(
-                            api::ChMaskConfig {
-                                enabled_uplink_channel_indices: vec![0, 2],
-                            }
-                            .into(),
-                        ),
+                        chmask_config: vec![0, 2].into(),
                         ..Default::default()
                     })
                     .await
@@ -5772,12 +5762,7 @@ async fn test_lorawan_10_config_store() {
                 Box::pin(async move {
                     device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
-                        chmask_config: Some(
-                            api::ChMaskConfig {
-                                enabled_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],
-                            }
-                            .into(),
-                        ),
+                        chmask_config: vec![0, 1, 2, 3, 4, 5, 6, 7].into(),
                         ..Default::default()
                     })
                     .await

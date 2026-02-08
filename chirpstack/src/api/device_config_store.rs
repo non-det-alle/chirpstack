@@ -29,14 +29,14 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         &self,
         request: Request<api::SetDeviceConfigStoreRequest>,
     ) -> Result<Response<()>, Status> {
-        let req_dcs = match &request.get_ref().device_config_store {
+        let req = request.get_ref();
+        let dev_eui = EUI64::from_str(&req.dev_eui).map_err(|e| e.status())?;
+        let dcs = match &req.device_config_store {
             Some(v) => v,
             None => {
                 return Err(Status::invalid_argument("device_config_store is missing"));
             }
         };
-
-        let dev_eui = EUI64::from_str(&req_dcs.dev_eui).map_err(|e| e.status())?;
 
         self.validator
             .validate(
@@ -48,11 +48,11 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         // upsert
         let _ = device_config_store::upsert(device_config_store::DeviceConfigStore {
             dev_eui,
-            chmask_config: req_dcs.chmask_config.as_ref().map(|c| c.into()),
-            dr: req_dcs.dr.map(|v| v as i16),
-            tx_power_index: req_dcs.tx_power_index.map(|v| v as i16),
-            nb_trans: req_dcs.nb_trans.map(|v| v as i16),
-            max_duty_cycle: req_dcs.max_duty_cycle.map(|v| v as i16),
+            chmask_config: dcs.enabled_uplink_channel_indices.clone().into(),
+            dr: dcs.dr.map(|v| v as i16),
+            tx_power_index: dcs.tx_power_index.map(|v| v as i16),
+            nb_trans: dcs.nb_trans.map(|v| v as i16),
+            max_duty_cycle: dcs.max_duty_cycle.map(|v| v as i16),
             ..Default::default()
         })
         .await
@@ -66,7 +66,6 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         request: Request<api::GetDeviceConfigStoreRequest>,
     ) -> Result<Response<api::GetDeviceConfigStoreResponse>, Status> {
         let req = request.get_ref();
-
         let dev_eui = EUI64::from_str(&req.dev_eui).map_err(|e| e.status())?;
 
         self.validator
@@ -82,8 +81,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
 
         Ok(Response::new(api::GetDeviceConfigStoreResponse {
             device_config_store: Some(api::DeviceConfigStore {
-                dev_eui: dcs.dev_eui.to_string(),
-                chmask_config: dcs.chmask_config.as_deref().cloned(),
+                enabled_uplink_channel_indices: dcs.chmask_config.into(),
                 dr: dcs.dr.map(|v| v as u32),
                 tx_power_index: dcs.tx_power_index.map(|v| v as u32),
                 nb_trans: dcs.nb_trans.map(|v| v as u32),
@@ -149,12 +147,11 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         }))
     }
 
-    async fn get_config_store_alignment(
+    async fn get_device_config_alignment(
         &self,
-        request: Request<api::GetConfigStoreAlignmentRequest>,
-    ) -> Result<Response<api::GetConfigStoreAlignmentResponse>, Status> {
+        request: Request<api::GetDeviceConfigAlignmentRequest>,
+    ) -> Result<Response<api::GetDeviceConfigAlignmentResponse>, Status> {
         let req = request.get_ref();
-
         let dev_eui = EUI64::from_str(&req.dev_eui).map_err(|e| e.status())?;
 
         self.validator
@@ -164,21 +161,24 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             )
             .await?;
 
-        Ok(Response::new(api::GetConfigStoreAlignmentResponse {
-            alignment: Some(
-                device_config_store::get_alignment(&dev_eui)
-                    .await
-                    .map_err(|e| e.status())?,
-            ),
+        let alignment = device_config_store::get_alignment(&dev_eui)
+            .await
+            .map_err(|e| e.status())?;
+
+        Ok(Response::new(api::GetDeviceConfigAlignmentResponse {
+            enabled_uplink_channel_indices: alignment.enabled_uplink_channel_indices,
+            dr: alignment.dr,
+            tx_power_index: alignment.tx_power_index,
+            nb_trans: alignment.nb_trans,
+            max_duty_cycle: alignment.max_duty_cycle,
         }))
     }
 
-    async fn get_available_uplink_channels(
+    async fn get_device_current_params(
         &self,
-        request: Request<api::GetAvailableChannelsRequest>,
-    ) -> Result<Response<api::GetAvailableChannelsResponse>, Status> {
+        request: Request<api::GetDeviceCurrentParamsRequest>,
+    ) -> Result<Response<api::GetDeviceCurrentParamsResponse>, Status> {
         let req = request.get_ref();
-
         let dev_eui = EUI64::from_str(&req.dev_eui).map_err(|e| e.status())?;
 
         self.validator
@@ -188,11 +188,10 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             )
             .await?;
 
+        let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
+        let ds = d.get_device_session().map_err(|e| e.status())?;
+
         let channels = {
-            let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
-
-            let ds = d.get_device_session().map_err(|e| e.status())?;
-
             let extra: Vec<usize> = ds
                 .extra_uplink_channels
                 .keys()
@@ -225,34 +224,12 @@ impl DeviceConfigStoreService for DeviceConfigStore {
                 .collect()
         };
 
-        Ok(Response::new(api::GetAvailableChannelsResponse {
+        Ok(Response::new(api::GetDeviceCurrentParamsResponse {
             channels,
-        }))
-    }
-
-    async fn get_current_tx_params(
-        &self,
-        request: Request<api::GetCurrentTxParamsRequest>,
-    ) -> Result<Response<api::GetCurrentTxParamsResponse>, Status> {
-        let req = request.get_ref();
-
-        let dev_eui = EUI64::from_str(&req.dev_eui).map_err(|e| e.status())?;
-
-        self.validator
-            .validate(
-                request.extensions(),
-                validator::ValidateDeviceAccess::new(validator::Flag::Read, dev_eui),
-            )
-            .await?;
-
-        let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
-
-        let ds = d.get_device_session().map_err(|e| e.status())?;
-
-        Ok(Response::new(api::GetCurrentTxParamsResponse {
             dr: ds.dr,
             tx_power_index: ds.tx_power_index,
             nb_trans: ds.nb_trans,
+            max_duty_cycle: ds.max_duty_cycle,
         }))
     }
 }
@@ -273,8 +250,6 @@ pub mod test {
 
         // setup admin key
         let key = api_key::test::create_api_key(true, false).await;
-
-        todo!(); // what?
 
         // create device
         let d = {
@@ -306,11 +281,9 @@ pub mod test {
         let create_req = get_request(
             &key.id,
             api::SetDeviceConfigStoreRequest {
+                dev_eui: d.dev_eui.to_string(),
                 device_config_store: Some(api::DeviceConfigStore {
-                    dev_eui: d.dev_eui.to_string(),
-                    chmask_config: Some(api::ChMaskConfig {
-                        enabled_uplink_channel_indices: vec![0, 2],
-                    }),
+                    enabled_uplink_channel_indices: vec![0, 2],
                     ..Default::default()
                 }),
             },
@@ -327,10 +300,7 @@ pub mod test {
         let get_resp = service.get(get_req).await.unwrap();
         assert_eq!(
             Some(api::DeviceConfigStore {
-                dev_eui: d.dev_eui.to_string(),
-                chmask_config: Some(api::ChMaskConfig {
-                    enabled_uplink_channel_indices: vec![0, 2],
-                }),
+                enabled_uplink_channel_indices: vec![0, 2],
                 ..Default::default()
             }),
             get_resp.get_ref().device_config_store
@@ -340,11 +310,9 @@ pub mod test {
         let update_req = get_request(
             &key.id,
             api::SetDeviceConfigStoreRequest {
+                dev_eui: d.dev_eui.to_string(),
                 device_config_store: Some(api::DeviceConfigStore {
-                    dev_eui: d.dev_eui.to_string(),
-                    chmask_config: Some(api::ChMaskConfig {
-                        enabled_uplink_channel_indices: vec![0, 1, 2],
-                    }),
+                    enabled_uplink_channel_indices: vec![0, 1, 2],
                     ..Default::default()
                 }),
             },
@@ -361,10 +329,7 @@ pub mod test {
         let get_resp = service.get(get_req).await.unwrap();
         assert_eq!(
             Some(api::DeviceConfigStore {
-                dev_eui: d.dev_eui.to_string(),
-                chmask_config: Some(api::ChMaskConfig {
-                    enabled_uplink_channel_indices: vec![0, 1, 2],
-                }),
+                enabled_uplink_channel_indices: vec![0, 1, 2],
                 ..Default::default()
             }),
             get_resp.get_ref().device_config_store
@@ -386,30 +351,30 @@ pub mod test {
         // get alignment
         let align_req = get_request(
             &key.id,
-            api::GetConfigStoreAlignmentRequest {
+            api::GetDeviceConfigAlignmentRequest {
                 dev_eui: d.dev_eui.to_string(),
             },
         );
-        let align_resp = service.get_config_store_alignment(align_req).await.unwrap();
+        let align_resp = service
+            .get_device_config_alignment(align_req)
+            .await
+            .unwrap();
         assert_eq!(
-            Some(api::ConfigStoreAlignment {
-                chmask_config: false,
+            api::GetDeviceConfigAlignmentResponse {
+                enabled_uplink_channel_indices: Some(false),
                 ..Default::default()
-            }),
-            align_resp.get_ref().alignment
+            },
+            align_resp.into_inner()
         );
 
         // get channels with correct enabled status
-        let chan_req = get_request(
+        let param_req = get_request(
             &key.id,
-            api::GetAvailableChannelsRequest {
+            api::GetDeviceCurrentParamsRequest {
                 dev_eui: d.dev_eui.to_string(),
             },
         );
-        let chan_resp = service
-            .get_available_uplink_channels(chan_req)
-            .await
-            .unwrap();
+        let param_resp = service.get_device_current_params(param_req).await.unwrap();
         assert_eq!(
             HashMap::from([
                 (
@@ -443,7 +408,7 @@ pub mod test {
                     }
                 ),
             ]),
-            chan_resp.get_ref().channels
+            param_resp.get_ref().channels
         );
 
         // delete

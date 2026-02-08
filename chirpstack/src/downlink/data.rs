@@ -1271,13 +1271,9 @@ impl Data {
             let requested_uplink_channel_indices: Option<Vec<usize>> = self
                 .device_config_store
                 .as_ref()
-                .and_then(|dcs| dcs.chmask_config.as_ref())
-                .map(|cm| {
-                    cm.enabled_uplink_channel_indices
-                        .iter()
-                        .map(|i| *i as usize)
-                        .collect()
-                });
+                .map(|dcs| &dcs.chmask_config)
+                .filter(|cm| !cm.is_empty())
+                .map(|cm| cm.iter().map(|i| *i as usize).collect());
 
             // computes the diff between the requested and device set to produce reconfig
             self.region_conf
@@ -1326,11 +1322,11 @@ impl Data {
         let dev_eui = self.device.dev_eui;
         let device_variables = self.device.variables.into_hashmap();
         let ds = self.device.get_device_session_mut()?;
-        
+
         let current_dr = self.uplink_frame_set.as_ref().unwrap().dr;
         let current_tx_power_index = ds.tx_power_index as u8;
         let current_nb_trans = ds.nb_trans as u8;
-        
+
         let dcs = self.device_config_store.as_ref();
         let dr_config = dcs.and_then(|dcs| dcs.dr);
         let tx_power_index_config = dcs.and_then(|dcs| dcs.tx_power_index);

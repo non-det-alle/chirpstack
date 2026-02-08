@@ -5,7 +5,6 @@ use diesel_async::RunQueryDsl;
 use tracing::info;
 use uuid::Uuid;
 
-use chirpstack_api::api;
 use lrwn::EUI64;
 
 use super::schema::{device, device_config_store};
@@ -17,17 +16,25 @@ pub struct DeviceConfigStore {
     pub dev_eui: EUI64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-    pub chmask_config: Option<fields::ChMaskConfig>,
+    pub chmask_config: fields::ChMaskConfig,
     pub dr: Option<i16>,
     pub tx_power_index: Option<i16>,
     pub nb_trans: Option<i16>,
     pub max_duty_cycle: Option<i16>,
 }
 
+pub struct ConfigStoreAlignment {
+    pub enabled_uplink_channel_indices: Option<bool>,
+    pub dr: Option<bool>,
+    pub tx_power_index: Option<bool>,
+    pub nb_trans: Option<bool>,
+    pub max_duty_cycle: Option<bool>,
+}
+
 impl DeviceConfigStore {
     fn validate(&mut self) -> Result<(), Error> {
         // chain all configurations here with &&
-        if self.chmask_config.is_none()
+        if self.chmask_config.is_empty()
             && self.dr.is_none()
             && self.tx_power_index.is_none()
             && self.nb_trans.is_none()
@@ -39,11 +46,15 @@ impl DeviceConfigStore {
         }
 
         // chmask_config
-        if let Some(cm) = self.chmask_config.as_mut() {
-            let uc = &mut cm.enabled_uplink_channel_indices;
+        if !self.chmask_config.is_empty() {
+            let uc = &mut self.chmask_config;
             // validate
-            if uc.is_empty() {
-                return Err(Error::Validation("provided chmask_config is empty".into()));
+            for &c in uc.iter() {
+                if u8::try_from(c).is_err() {
+                    return Err(Error::Validation(
+                        "provided channel index is out-of-bounds".into(),
+                    ));
+                }
             }
             // format
             uc.sort_unstable();
@@ -102,7 +113,7 @@ impl Default for DeviceConfigStore {
             dev_eui: EUI64::from_be_bytes([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
             created_at: now,
             updated_at: now,
-            chmask_config: None,
+            chmask_config: vec![].into(),
             dr: None,
             tx_power_index: None,
             nb_trans: None,
@@ -201,7 +212,7 @@ pub async fn list(
         .map_err(|e| Error::from_diesel(e, "".into()))
 }
 
-pub async fn get_alignment(dev_eui: &EUI64) -> Result<api::ConfigStoreAlignment, Error> {
+pub async fn get_alignment(dev_eui: &EUI64) -> Result<ConfigStoreAlignment, Error> {
     let (dcs, ds): (DeviceConfigStore, Option<fields::DeviceSession>) = device_config_store::table
         .find(&dev_eui)
         .inner_join(device::table)
@@ -210,40 +221,15 @@ pub async fn get_alignment(dev_eui: &EUI64) -> Result<api::ConfigStoreAlignment,
         .await
         .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
 
-    // by default, absent configs are considered aligned
     let ds = ds.ok_or_else(|| Error::NotFound(dev_eui.to_string()))?;
 
-    let chmask_config = match dcs.chmask_config {
-        Some(c) => c.enabled_uplink_channel_indices == ds.enabled_uplink_channel_indices,
-        None => true,
-    };
-
-    let dr = match dcs.dr {
-        Some(v) => v == ds.dr as i16,
-        None => true,
-    };
-
-    let tx_power_index = match dcs.tx_power_index {
-        Some(v) => v == ds.tx_power_index as i16,
-        None => true,
-    };
-
-    let nb_trans = match dcs.nb_trans {
-        Some(v) => v == ds.nb_trans as i16,
-        None => true,
-    };
-
-    let max_duty_cycle = match dcs.max_duty_cycle {
-        Some(v) => v == ds.max_duty_cycle as i16,
-        None => true,
-    };
-
-    Ok(api::ConfigStoreAlignment {
-        chmask_config,
-        dr,
-        tx_power_index,
-        nb_trans,
-        max_duty_cycle,
+    Ok(ConfigStoreAlignment {
+        enabled_uplink_channel_indices: (!dcs.chmask_config.is_empty())
+            .then(|| dcs.chmask_config == ds.enabled_uplink_channel_indices),
+        dr: dcs.dr.map(|v| v == ds.dr as i16),
+        tx_power_index: dcs.tx_power_index.map(|v| v == ds.tx_power_index as i16),
+        nb_trans: dcs.nb_trans.map(|v| v == ds.nb_trans as i16),
+        max_duty_cycle: dcs.max_duty_cycle.map(|v| v == ds.max_duty_cycle as i16),
     })
 }
 
@@ -302,34 +288,14 @@ pub mod test {
         };
         assert!(upsert(dcs).await.is_err());
 
-        // invalid empty channel mask vector
-        let dcs = DeviceConfigStore {
-            dev_eui: d.dev_eui,
-            chmask_config: Some(
-                api::ChMaskConfig {
-                    enabled_uplink_channel_indices: vec![],
-                }
-                .into(),
-            ),
-            ..Default::default()
-        };
-        assert!(upsert(dcs).await.is_err());
-
         // not created yet
         assert!(get(&d.dev_eui).await.is_err());
-
-        todo!(); // what?
 
         // create
         let mut dcs = upsert(
             DeviceConfigStore {
                 dev_eui: d.dev_eui,
-                chmask_config: Some(
-                    api::ChMaskConfig {
-                        enabled_uplink_channel_indices: vec![0, 1, 2],
-                    }
-                    .into(),
-                ),
+                chmask_config: vec![0, 1, 2].into(),
                 ..Default::default()
             }
             .into(),
@@ -343,22 +309,17 @@ pub mod test {
 
         // aligned
         let align = get_alignment(&d.dev_eui).await.unwrap();
-        assert!(align.chmask_config);
+        assert!(align.enabled_uplink_channel_indices.unwrap());
 
         // update
-        dcs.chmask_config = Some(
-            api::ChMaskConfig {
-                enabled_uplink_channel_indices: vec![0, 1, 2, 3],
-            }
-            .into(),
-        );
+        dcs.chmask_config = vec![0, 1, 2, 3].into();
         dcs = upsert(dcs).await.unwrap();
         let dcs_get = get(&d.dev_eui).await.unwrap();
         assert_eq!(dcs, dcs_get);
 
         // not aligned
         let align = get_alignment(&d.dev_eui).await.unwrap();
-        assert!(!align.chmask_config);
+        assert!(!align.enabled_uplink_channel_indices.unwrap());
 
         // get count and list
         let tests = vec![
