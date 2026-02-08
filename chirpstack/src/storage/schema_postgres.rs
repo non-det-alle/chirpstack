@@ -75,6 +75,10 @@ diesel::table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         chmask_config -> Nullable<Bytea>,
+        dr -> Nullable<Int2>,
+        tx_power_index -> Nullable<Int2>,
+        nb_trans -> Nullable<Int2>,
+        max_duty_cycle -> Nullable<Int2>,
     }
 }
 

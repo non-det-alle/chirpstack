@@ -106,6 +106,7 @@ impl DeviceProfile {
     pub fn reset_session_to_boot_params(&self, ds: &mut internal::DeviceSession) {
         ds.mac_version = self.mac_version.to_proto().into();
         ds.nb_trans = 1;
+        ds.max_duty_cycle = 0;
 
         if let Some(class_b_params) = &self.class_b_params {
             ds.class_b_ping_slot_dr = class_b_params.ping_slot_dr as u32;

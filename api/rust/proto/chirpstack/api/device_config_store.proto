@@ -66,6 +66,14 @@ service DeviceConfigStoreService {
             get : "/api/device_config_stores/{dev_eui}/available_uplink_channels"
         };
     }
+
+    // Get the current transmission paramenters (data-rate, power and number of transmissions)
+    // used by the given device.
+    rpc GetCurrentTxParams(GetCurrentTxParamsRequest) returns (GetCurrentTxParamsResponse) {
+        option (google.api.http) = {
+            get : "/api/device_config_stores/{dev_eui}/current_tx_params"
+        };
+    }
 }
 
 message ChMaskConfig {
@@ -79,11 +87,35 @@ message DeviceConfigStore {
 
     // ChMask configuration object.
     ChMaskConfig chmask_config = 2;
+
+    // Data-rate.
+    optional uint32 dr = 3;
+
+    // Transmission power index.
+    optional uint32 tx_power_index = 4;
+
+    // Number of transmissions.
+    optional uint32 nb_trans = 5;
+
+    // Maximum duty-cycle.
+    optional uint32 max_duty_cycle = 6;
 }
 
 message ConfigStoreAlignment {
     // Alignment of the ChMask configuration
     bool chmask_config = 1;
+
+    // Alignment of the data-rate.
+    bool dr = 2;
+
+    // Alignment of the transmission power index.
+    bool tx_power_index = 3;
+
+    // Alignment of the number of transmissions.
+    bool nb_trans = 4;
+
+    // Alignment of the maximum duty-cycle.
+    bool max_duty_cycle = 5;
 }
 
 message DeviceConfigStoreListItem {
@@ -178,4 +210,20 @@ message GetAvailableChannelsRequest {
 message GetAvailableChannelsResponse {
     // Available uplink channels.
     map<uint32, DeviceUplinkChannel> channels = 1;
+}
+
+message GetCurrentTxParamsRequest {
+    // Device EUI (EUI64).
+    string dev_eui = 1;
+}
+
+message GetCurrentTxParamsResponse {
+    // Data-rate.
+    uint32 dr = 1;
+
+    // Transmission power index.
+    uint32 tx_power_index = 2;
+
+    // Number of transmissions.
+    uint32 nb_trans = 3;
 }

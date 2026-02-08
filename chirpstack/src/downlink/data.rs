@@ -674,6 +674,7 @@ impl Data {
         self._request_custom_channel_reconfiguration().await?;
         self._request_channel_mask_reconfiguration().await?;
         self._request_adr_change().await?;
+        self._request_mac_duty_cycle_change().await?;
         self._request_device_status()?;
         self._request_rejoin_param_setup().await?;
         self._set_ping_slot_parameters().await?;
@@ -1325,49 +1326,72 @@ impl Data {
         let dev_eui = self.device.dev_eui;
         let device_variables = self.device.variables.into_hashmap();
         let ds = self.device.get_device_session_mut()?;
+        
+        let current_dr = self.uplink_frame_set.as_ref().unwrap().dr;
+        let current_tx_power_index = ds.tx_power_index as u8;
+        let current_nb_trans = ds.nb_trans as u8;
+        
+        let dcs = self.device_config_store.as_ref();
+        let dr_config = dcs.and_then(|dcs| dcs.dr);
+        let tx_power_index_config = dcs.and_then(|dcs| dcs.tx_power_index);
+        let nb_trans_config = dcs.and_then(|dcs| dcs.nb_trans);
 
-        let req = adr::Request {
-            dev_eui,
-            device_variables,
-            region_config_id: ufs.region_config_id.clone(),
-            region_common_name: ufs.region_common_name,
-            mac_version: self.device_profile.mac_version,
-            reg_params_revision: self.device_profile.reg_params_revision,
-            adr: ds.adr,
-            dr: self.uplink_frame_set.as_ref().unwrap().dr,
-            tx_power_index: ds.tx_power_index as u8,
-            nb_trans: ds.nb_trans as u8,
-            max_tx_power_index: if ds.max_supported_tx_power_index != 0 {
-                ds.max_supported_tx_power_index as u8
-            } else {
-                let mut max_tx_power_index: u8 = 0;
-                for n in 0..16 {
-                    if self.region_conf.get_tx_power_offset(n).is_ok() {
-                        max_tx_power_index = n as u8;
+        // override local ADR if any config is found in the config store
+        let resp = if dr_config.is_some()
+            || tx_power_index_config.is_some()
+            || nb_trans_config.is_some()
+        {
+            adr::Response {
+                dr: dr_config.map(|v| v as u8).unwrap_or(current_dr),
+                tx_power_index: tx_power_index_config
+                    .map(|v| v as u8)
+                    .unwrap_or(current_tx_power_index),
+                nb_trans: nb_trans_config.map(|v| v as u8).unwrap_or(current_nb_trans),
+            }
+        } else {
+            let req = adr::Request {
+                dev_eui,
+                device_variables,
+                region_config_id: ufs.region_config_id.clone(),
+                region_common_name: ufs.region_common_name,
+                mac_version: self.device_profile.mac_version,
+                reg_params_revision: self.device_profile.reg_params_revision,
+                adr: ds.adr,
+                dr: current_dr,
+                tx_power_index: current_tx_power_index,
+                nb_trans: current_nb_trans,
+                max_tx_power_index: if ds.max_supported_tx_power_index != 0 {
+                    ds.max_supported_tx_power_index as u8
+                } else {
+                    let mut max_tx_power_index: u8 = 0;
+                    for n in 0..16 {
+                        if self.region_conf.get_tx_power_offset(n).is_ok() {
+                            max_tx_power_index = n as u8;
+                        }
                     }
-                }
-                max_tx_power_index
-            },
-            required_snr_for_dr: match dr {
-                lrwn::region::DataRateModulation::Lora(params) => {
-                    config::get_required_snr_for_sf(params.spreading_factor)?
-                }
-                _ => 0.0,
-            },
-            installation_margin: self.network_conf.installation_margin,
-            min_dr: self.network_conf.min_dr,
-            max_dr: self.network_conf.max_dr,
-            uplink_history: ds.uplink_adr_history.clone(),
-            skip_f_cnt_check: ds.skip_f_cnt_check,
-        };
+                    max_tx_power_index
+                },
+                required_snr_for_dr: match dr {
+                    lrwn::region::DataRateModulation::Lora(params) => {
+                        config::get_required_snr_for_sf(params.spreading_factor)?
+                    }
+                    _ => 0.0,
+                },
+                installation_margin: self.network_conf.installation_margin,
+                min_dr: self.network_conf.min_dr,
+                max_dr: self.network_conf.max_dr,
+                uplink_history: ds.uplink_adr_history.clone(),
+                skip_f_cnt_check: ds.skip_f_cnt_check,
+            };
 
-        let resp = adr::handle(&self.device_profile.adr_algorithm_id, &req).await;
+            adr::handle(&self.device_profile.adr_algorithm_id, &req).await
+        };
 
         // The response values are different than the request values, thus we must
         // send a LinkADRReq to the device.
-        if resp.dr != req.dr
-            || resp.tx_power_index != req.tx_power_index
-            || resp.nb_trans != req.nb_trans
+        if resp.dr != current_dr
+            || resp.tx_power_index != current_tx_power_index
+            || resp.nb_trans != current_nb_trans
         {
             let mut adr_set = false;
             for set in self.mac_commands.iter_mut() {
@@ -1416,6 +1440,29 @@ impl Data {
                 )]);
 
                 self.mac_commands.push(set);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn _request_mac_duty_cycle_change(&mut self) -> Result<()> {
+        trace!("Requesting max duty-cycle change");
+
+        let ds = self.device.get_device_session()?;
+
+        let current_max_duty_cycle = ds.max_duty_cycle as u8;
+
+        let max_duty_cycle_config = self
+            .device_config_store
+            .as_ref()
+            .and_then(|dcs| dcs.max_duty_cycle)
+            .map(|max_duty_cycle| max_duty_cycle as u8);
+
+        if let Some(requested_max_duty_cycle) = max_duty_cycle_config {
+            if current_max_duty_cycle != requested_max_duty_cycle {
+                self.mac_commands
+                    .push(maccommand::duty_cycle::request(requested_max_duty_cycle))
             }
         }
 

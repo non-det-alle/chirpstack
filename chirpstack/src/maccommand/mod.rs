@@ -16,6 +16,7 @@ pub mod device_time;
 pub mod end_device_conf;
 pub mod filter_list;
 pub mod link_adr;
+pub mod duty_cycle;
 pub mod link_check;
 pub mod new_channel;
 pub mod notify_new_end_device;
@@ -132,6 +133,7 @@ async fn handle(
         lrwn::CID::DeviceModeInd => device_mode_ind::handle(dev, block).await,
         lrwn::CID::DeviceTimeReq => device_time::handle(uplink_frame_set, dev, block),
         lrwn::CID::LinkADRAns => link_adr::handle(uplink_frame_set, dev, block, pending_block),
+        lrwn::CID::DutyCycleAns => duty_cycle::handle(dev, block, pending_block),
         lrwn::CID::LinkCheckReq => link_check::handle(uplink_frame_set, dev, block),
         lrwn::CID::NewChannelAns => new_channel::handle(dev, block, pending_block),
         lrwn::CID::PingSlotChannelAns => ping_slot_channel::handle(dev, block, pending_block),

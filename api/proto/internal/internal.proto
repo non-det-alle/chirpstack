@@ -145,6 +145,9 @@ message DeviceSession {
 
   // Pending mac-commands.
   map<uint32, bytes> mac_command_pending = 43;
+
+  // Maximum uplink aggregated duty-cycle.
+  uint32 max_duty_cycle = 44;
 }
 
 message UplinkAdrHistory {

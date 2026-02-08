@@ -18,12 +18,21 @@ pub struct DeviceConfigStore {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub chmask_config: Option<fields::ChMaskConfig>,
+    pub dr: Option<i16>,
+    pub tx_power_index: Option<i16>,
+    pub nb_trans: Option<i16>,
+    pub max_duty_cycle: Option<i16>,
 }
 
 impl DeviceConfigStore {
     fn validate(&mut self) -> Result<(), Error> {
-        // chain all configurations here with ||
-        if self.chmask_config.is_none() {
+        // chain all configurations here with &&
+        if self.chmask_config.is_none()
+            && self.dr.is_none()
+            && self.tx_power_index.is_none()
+            && self.nb_trans.is_none()
+            && self.max_duty_cycle.is_none()
+        {
             return Err(Error::Validation(
                 "empty configuration, consider deleting".into(),
             ));
@@ -41,6 +50,46 @@ impl DeviceConfigStore {
             uc.dedup();
         }
 
+        // dr
+        if let Some(dr) = self.dr {
+            // validate
+            if u8::try_from(dr).is_err() {
+                return Err(Error::Validation(
+                    "provided dr value is out-of-bounds".into(),
+                ));
+            }
+        }
+
+        // tx_power_index
+        if let Some(tx_power_index) = self.tx_power_index {
+            // validate
+            if u8::try_from(tx_power_index).is_err() {
+                return Err(Error::Validation(
+                    "provided tx_power_index value is out-of-bounds".into(),
+                ));
+            }
+        }
+
+        // nb_trans
+        if let Some(nb_trans) = self.nb_trans {
+            // validate
+            if u8::try_from(nb_trans).is_err() {
+                return Err(Error::Validation(
+                    "provided nb_trans value is out-of-bounds".into(),
+                ));
+            }
+        }
+
+        // max_duty_cycle
+        if let Some(max_duty_cycle) = self.max_duty_cycle {
+            // validate
+            if u8::try_from(max_duty_cycle).is_err() {
+                return Err(Error::Validation(
+                    "provided max_duty_cycle value is out-of-bounds".into(),
+                ));
+            }
+        }
+
         Ok(())
     }
 }
@@ -54,6 +103,10 @@ impl Default for DeviceConfigStore {
             created_at: now,
             updated_at: now,
             chmask_config: None,
+            dr: None,
+            tx_power_index: None,
+            nb_trans: None,
+            max_duty_cycle: None,
         }
     }
 }
@@ -75,6 +128,10 @@ pub async fn upsert(mut dcs: DeviceConfigStore) -> Result<DeviceConfigStore, Err
         .set((
             device_config_store::updated_at.eq(Utc::now()),
             device_config_store::chmask_config.eq(&dcs.chmask_config),
+            device_config_store::dr.eq(&dcs.dr),
+            device_config_store::tx_power_index.eq(&dcs.tx_power_index),
+            device_config_store::nb_trans.eq(&dcs.nb_trans),
+            device_config_store::max_duty_cycle.eq(&dcs.max_duty_cycle),
         ))
         .get_result(&mut get_async_db_conn().await?)
         .await
@@ -153,14 +210,41 @@ pub async fn get_alignment(dev_eui: &EUI64) -> Result<api::ConfigStoreAlignment,
         .await
         .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
 
+    // by default, absent configs are considered aligned
     let ds = ds.ok_or_else(|| Error::NotFound(dev_eui.to_string()))?;
 
     let chmask_config = match dcs.chmask_config {
-        Some(cm) => cm.enabled_uplink_channel_indices == ds.enabled_uplink_channel_indices,
-        None => true, // by default, chmask is considered aligned
+        Some(c) => c.enabled_uplink_channel_indices == ds.enabled_uplink_channel_indices,
+        None => true,
     };
 
-    Ok(api::ConfigStoreAlignment { chmask_config })
+    let dr = match dcs.dr {
+        Some(v) => v == ds.dr as i16,
+        None => true,
+    };
+
+    let tx_power_index = match dcs.tx_power_index {
+        Some(v) => v == ds.tx_power_index as i16,
+        None => true,
+    };
+
+    let nb_trans = match dcs.nb_trans {
+        Some(v) => v == ds.nb_trans as i16,
+        None => true,
+    };
+
+    let max_duty_cycle = match dcs.max_duty_cycle {
+        Some(v) => v == ds.max_duty_cycle as i16,
+        None => true,
+    };
+
+    Ok(api::ConfigStoreAlignment {
+        chmask_config,
+        dr,
+        tx_power_index,
+        nb_trans,
+        max_duty_cycle,
+    })
 }
 
 #[cfg(test)]
@@ -233,6 +317,8 @@ pub mod test {
 
         // not created yet
         assert!(get(&d.dev_eui).await.is_err());
+
+        todo!(); // what?
 
         // create
         let mut dcs = upsert(

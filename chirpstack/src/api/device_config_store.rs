@@ -49,6 +49,10 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         let _ = device_config_store::upsert(device_config_store::DeviceConfigStore {
             dev_eui,
             chmask_config: req_dcs.chmask_config.as_ref().map(|c| c.into()),
+            dr: req_dcs.dr.map(|v| v as i16),
+            tx_power_index: req_dcs.tx_power_index.map(|v| v as i16),
+            nb_trans: req_dcs.nb_trans.map(|v| v as i16),
+            max_duty_cycle: req_dcs.max_duty_cycle.map(|v| v as i16),
             ..Default::default()
         })
         .await
@@ -80,6 +84,10 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             device_config_store: Some(api::DeviceConfigStore {
                 dev_eui: dcs.dev_eui.to_string(),
                 chmask_config: dcs.chmask_config.as_deref().cloned(),
+                dr: dcs.dr.map(|v| v as u32),
+                tx_power_index: dcs.tx_power_index.map(|v| v as u32),
+                nb_trans: dcs.nb_trans.map(|v| v as u32),
+                max_duty_cycle: dcs.max_duty_cycle.map(|v| v as u32),
             }),
             created_at: Some(helpers::datetime_to_prost_timestamp(&dcs.created_at)),
             updated_at: Some(helpers::datetime_to_prost_timestamp(&dcs.updated_at)),
@@ -221,6 +229,32 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             channels,
         }))
     }
+
+    async fn get_current_tx_params(
+        &self,
+        request: Request<api::GetCurrentTxParamsRequest>,
+    ) -> Result<Response<api::GetCurrentTxParamsResponse>, Status> {
+        let req = request.get_ref();
+
+        let dev_eui = EUI64::from_str(&req.dev_eui).map_err(|e| e.status())?;
+
+        self.validator
+            .validate(
+                request.extensions(),
+                validator::ValidateDeviceAccess::new(validator::Flag::Read, dev_eui),
+            )
+            .await?;
+
+        let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
+
+        let ds = d.get_device_session().map_err(|e| e.status())?;
+
+        Ok(Response::new(api::GetCurrentTxParamsResponse {
+            dr: ds.dr,
+            tx_power_index: ds.tx_power_index,
+            nb_trans: ds.nb_trans,
+        }))
+    }
 }
 
 #[cfg(test)]
@@ -239,6 +273,8 @@ pub mod test {
 
         // setup admin key
         let key = api_key::test::create_api_key(true, false).await;
+
+        todo!(); // what?
 
         // create device
         let d = {
@@ -275,6 +311,7 @@ pub mod test {
                     chmask_config: Some(api::ChMaskConfig {
                         enabled_uplink_channel_indices: vec![0, 2],
                     }),
+                    ..Default::default()
                 }),
             },
         );
@@ -294,6 +331,7 @@ pub mod test {
                 chmask_config: Some(api::ChMaskConfig {
                     enabled_uplink_channel_indices: vec![0, 2],
                 }),
+                ..Default::default()
             }),
             get_resp.get_ref().device_config_store
         );
@@ -307,6 +345,7 @@ pub mod test {
                     chmask_config: Some(api::ChMaskConfig {
                         enabled_uplink_channel_indices: vec![0, 1, 2],
                     }),
+                    ..Default::default()
                 }),
             },
         );
@@ -326,6 +365,7 @@ pub mod test {
                 chmask_config: Some(api::ChMaskConfig {
                     enabled_uplink_channel_indices: vec![0, 1, 2],
                 }),
+                ..Default::default()
             }),
             get_resp.get_ref().device_config_store
         );
@@ -353,7 +393,8 @@ pub mod test {
         let align_resp = service.get_config_store_alignment(align_req).await.unwrap();
         assert_eq!(
             Some(api::ConfigStoreAlignment {
-                chmask_config: false
+                chmask_config: false,
+                ..Default::default()
             }),
             align_resp.get_ref().alignment
         );

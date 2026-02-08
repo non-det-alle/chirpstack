@@ -70,6 +70,10 @@ diesel::table! {
         created_at -> TimestamptzSqlite,
         updated_at -> TimestamptzSqlite,
         chmask_config -> Nullable<Binary>,
+        dr -> Nullable<SmallInt>,
+        tx_power_index -> Nullable<SmallInt>,
+        nb_trans -> Nullable<SmallInt>,
+        max_duty_cycle -> Nullable<SmallInt>,
     }
 }
 
