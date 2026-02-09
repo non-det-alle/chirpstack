@@ -13,7 +13,7 @@ use crate::storage::{
 };
 use crate::{config, gateway::backend as gateway_backend, integration, region, test, uplink};
 use chirpstack_api::{common, gw, integration as integration_pb, internal, stream};
-use lrwn::region::CommonName;
+use lrwn::{region::CommonName, DutyCycleReqPayload};
 use lrwn::{AES128Key, DevAddr, EUI64};
 
 type Function = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
@@ -5545,7 +5545,7 @@ async fn test_lorawan_10_config_store() {
         tenant_id: t.id,
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_4,
-        reg_params_revision: lrwn::region::Revision::RP002_1_0_3,
+        reg_params_revision: lrwn::region::Revision::RP002_1_0_4,
         supports_otaa: true,
         ..Default::default()
     })
@@ -5601,7 +5601,7 @@ async fn test_lorawan_10_config_store() {
         ..Default::default()
     };
 
-    let ds_7chan = internal::DeviceSession {
+    let ds_8chan = internal::DeviceSession {
         enabled_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],
         ..ds.clone()
     };
@@ -5657,7 +5657,7 @@ async fn test_lorawan_10_config_store() {
             ],
         },
         Test {
-            name: "trigger chmask configuration".into(),
+            name: "trigger chmask and adr configuration".into(),
             dev_eui: dev.dev_eui,
             device_queue_items: vec![],
             before_func: Some(Box::new(move || {
@@ -5666,6 +5666,9 @@ async fn test_lorawan_10_config_store() {
                     device_config_store::upsert(device_config_store::DeviceConfigStore {
                         dev_eui: dev_eui,
                         chmask_config: vec![0, 2].into(),
+                        dr: Some(3),
+                        tx_power_index: Some(7),
+                        nb_trans: Some(5),
                         ..Default::default()
                     })
                     .await
@@ -5702,13 +5705,13 @@ async fn test_lorawan_10_config_store() {
                                 },
                                 f_opts: lrwn::MACCommandSet::new(vec![
                                     lrwn::MACCommand::LinkADRReq(lrwn::LinkADRReqPayload {
-                                        dr: 0,
-                                        tx_power: 0,
+                                        dr: 3,
+                                        tx_power: 7,
                                         ch_mask: lrwn::ChMask::from_slice(&[true, false, true])
                                             .unwrap(),
                                         redundancy: lrwn::Redundancy {
                                             ch_mask_cntl: 0,
-                                            nb_rep: 0,
+                                            nb_rep: 5,
                                         },
                                     }),
                                 ]),
@@ -5716,7 +5719,7 @@ async fn test_lorawan_10_config_store() {
                             f_port: None,
                             frm_payload: None,
                         }),
-                        mic: Some([73, 60, 188, 166]),
+                        mic: Some([130, 211, 171, 4]),
                     },
                     lrwn::PhyPayload {
                         mhdr: lrwn::MHDR {
@@ -5734,13 +5737,13 @@ async fn test_lorawan_10_config_store() {
                                 },
                                 f_opts: lrwn::MACCommandSet::new(vec![
                                     lrwn::MACCommand::LinkADRReq(lrwn::LinkADRReqPayload {
-                                        dr: 0,
-                                        tx_power: 0,
+                                        dr: 3,
+                                        tx_power: 7,
                                         ch_mask: lrwn::ChMask::from_slice(&[true, false, true])
                                             .unwrap(),
                                         redundancy: lrwn::Redundancy {
                                             ch_mask_cntl: 0,
-                                            nb_rep: 0,
+                                            nb_rep: 5,
                                         },
                                     }),
                                 ]),
@@ -5748,7 +5751,7 @@ async fn test_lorawan_10_config_store() {
                             f_port: None,
                             frm_payload: None,
                         }),
-                        mic: Some([73, 60, 188, 166]),
+                        mic: Some([130, 211, 171, 4]),
                     },
                 ]),
             ],
@@ -5775,7 +5778,7 @@ async fn test_lorawan_10_config_store() {
                     device_config_store::delete(&dev_eui).await.unwrap();
                 })
             })),
-            device_session: Some(ds_7chan.clone()),
+            device_session: Some(ds_8chan.clone()),
             tx_info: tx_info.clone(),
             rx_info: rx_info.clone(),
             phy_payload: up.clone(),
@@ -5850,6 +5853,89 @@ async fn test_lorawan_10_config_store() {
                             frm_payload: None,
                         }),
                         mic: Some([8, 238, 221, 52]),
+                    },
+                ]),
+            ],
+        },
+        Test {
+            name: "set max duty-cycle".into(),
+            dev_eui: dev.dev_eui,
+            device_queue_items: vec![],
+            before_func: Some(Box::new(move || {
+                let dev_eui = dev.dev_eui;
+                Box::pin(async move {
+                    device_config_store::upsert(device_config_store::DeviceConfigStore {
+                        dev_eui: dev_eui,
+                        max_duty_cycle: Some(13),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                })
+            })),
+            after_func: Some(Box::new(move || {
+                let dev_eui = dev.dev_eui;
+                Box::pin(async move {
+                    device_config_store::delete(&dev_eui).await.unwrap();
+                })
+            })),
+            device_session: Some(ds.clone()),
+            tx_info: tx_info.clone(),
+            rx_info: rx_info.clone(),
+            phy_payload: up.clone(),
+            assert: vec![
+                assert::f_cnt_up(dev.dev_eui, 11),
+                assert::n_f_cnt_down(dev.dev_eui, 5),
+                assert::downlink_phy_payloads_decoded_f_opts(vec![
+                    lrwn::PhyPayload {
+                        mhdr: lrwn::MHDR {
+                            f_type: lrwn::FType::UnconfirmedDataDown,
+                            major: lrwn::Major::LoRaWANR1,
+                        },
+                        payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
+                            fhdr: lrwn::FHDR {
+                                devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
+                                f_cnt: 5,
+                                f_ctrl: lrwn::FCtrl {
+                                    adr: true,
+                                    f_opts_len: 2,
+                                    ..Default::default()
+                                },
+                                f_opts: lrwn::MACCommandSet::new(vec![
+                                    lrwn::MACCommand::DutyCycleReq(DutyCycleReqPayload {
+                                        max_duty_cycle: 13,
+                                    }),
+                                ]),
+                            },
+                            f_port: None,
+                            frm_payload: None,
+                        }),
+                        mic: Some([122, 177, 61, 80]),
+                    },
+                    lrwn::PhyPayload {
+                        mhdr: lrwn::MHDR {
+                            f_type: lrwn::FType::UnconfirmedDataDown,
+                            major: lrwn::Major::LoRaWANR1,
+                        },
+                        payload: lrwn::Payload::MACPayload(lrwn::MACPayload {
+                            fhdr: lrwn::FHDR {
+                                devaddr: lrwn::DevAddr::from_be_bytes([1, 2, 3, 4]),
+                                f_cnt: 5,
+                                f_ctrl: lrwn::FCtrl {
+                                    adr: true,
+                                    f_opts_len: 2,
+                                    ..Default::default()
+                                },
+                                f_opts: lrwn::MACCommandSet::new(vec![
+                                    lrwn::MACCommand::DutyCycleReq(DutyCycleReqPayload {
+                                        max_duty_cycle: 13,
+                                    }),
+                                ]),
+                            },
+                            f_port: None,
+                            frm_payload: None,
+                        }),
+                        mic: Some([122, 177, 61, 80]),
                     },
                 ]),
             ],

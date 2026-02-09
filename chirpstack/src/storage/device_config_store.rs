@@ -23,6 +23,7 @@ pub struct DeviceConfigStore {
     pub max_duty_cycle: Option<i16>,
 }
 
+#[derive(PartialEq, Debug, Clone)]
 pub struct ConfigStoreAlignment {
     pub enabled_uplink_channel_indices: Option<bool>,
     pub dr: Option<bool>,
@@ -271,6 +272,10 @@ pub mod test {
                 device_session: Some(
                     internal::DeviceSession {
                         enabled_uplink_channel_indices: vec![0, 1, 2],
+                        dr: 0,
+                        tx_power_index: 0,
+                        nb_trans: 1,
+                        max_duty_cycle: 0,
                         ..Default::default()
                     }
                     .into(),
@@ -296,6 +301,10 @@ pub mod test {
             DeviceConfigStore {
                 dev_eui: d.dev_eui,
                 chmask_config: vec![0, 1, 2].into(),
+                dr: Some(1),
+                tx_power_index: None,
+                nb_trans: Some(8),
+                max_duty_cycle: None,
                 ..Default::default()
             }
             .into(),
@@ -309,17 +318,39 @@ pub mod test {
 
         // aligned
         let align = get_alignment(&d.dev_eui).await.unwrap();
-        assert!(align.enabled_uplink_channel_indices.unwrap());
+        assert_eq!(
+            ConfigStoreAlignment {
+                enabled_uplink_channel_indices: Some(true),
+                dr: Some(false),
+                tx_power_index: None,
+                nb_trans: Some(false),
+                max_duty_cycle: None,
+            },
+            align
+        );
 
         // update
         dcs.chmask_config = vec![0, 1, 2, 3].into();
+        dcs.dr = None;
+        dcs.tx_power_index = Some(0);
+        dcs.nb_trans = None;
+        dcs.max_duty_cycle = Some(14);
         dcs = upsert(dcs).await.unwrap();
         let dcs_get = get(&d.dev_eui).await.unwrap();
         assert_eq!(dcs, dcs_get);
 
-        // not aligned
+        // re-check aligned
         let align = get_alignment(&d.dev_eui).await.unwrap();
-        assert!(!align.enabled_uplink_channel_indices.unwrap());
+        assert_eq!(
+            ConfigStoreAlignment {
+                enabled_uplink_channel_indices: Some(false),
+                dr: None,
+                tx_power_index: Some(true),
+                nb_trans: None,
+                max_duty_cycle: Some(false),
+            },
+            align
+        );
 
         // get count and list
         let tests = vec![

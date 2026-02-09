@@ -1220,7 +1220,7 @@ impl Data {
             }
         }
 
-        let current_channels: HashMap<usize, lrwn::region::Channel> = ds
+        let curr_channels: HashMap<usize, lrwn::region::Channel> = ds
             .extra_uplink_channels
             .iter()
             .map(|(k, v)| {
@@ -1236,9 +1236,7 @@ impl Data {
             })
             .collect();
 
-        if let Some(block) =
-            maccommand::new_channel::request(3, &current_channels, &wanted_channels)
-        {
+        if let Some(block) = maccommand::new_channel::request(3, &curr_channels, &wanted_channels) {
             self.mac_commands.push(block);
         }
 
@@ -1268,19 +1266,19 @@ impl Data {
                 .collect();
 
             // chmask_config from config store
-            let requested_uplink_channel_indices: Option<Vec<usize>> = self
+            let uplink_channel_indices_config: Option<Vec<usize>> = self
                 .device_config_store
                 .as_ref()
                 .map(|dcs| &dcs.chmask_config)
                 .filter(|cm| !cm.is_empty())
                 .map(|cm| cm.iter().map(|i| *i as usize).collect());
 
-            // computes the diff between the requested and device set to produce reconfig
+            // computes diff between config set and device set to produce reconfig
             self.region_conf
                 .get_link_adr_req_payloads_for_enabled_uplink_channel_indices(
                     &device_enabled_uplink_channel_indices,
                     &device_extra_channel_indices,
-                    requested_uplink_channel_indices.as_deref(),
+                    uplink_channel_indices_config.as_deref(),
                 )
         };
 
@@ -1333,9 +1331,10 @@ impl Data {
         let nb_trans_config = dcs.and_then(|dcs| dcs.nb_trans);
 
         // override local ADR if any config is found in the config store
-        let resp = if dr_config.is_some()
-            || tx_power_index_config.is_some()
-            || nb_trans_config.is_some()
+        let resp = if dr_config
+            .or(tx_power_index_config)
+            .or(nb_trans_config)
+            .is_some()
         {
             adr::Response {
                 dr: dr_config.map(|v| v as u8).unwrap_or(current_dr),

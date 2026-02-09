@@ -30,13 +30,8 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         request: Request<api::SetDeviceConfigStoreRequest>,
     ) -> Result<Response<()>, Status> {
         let req = request.get_ref();
+
         let dev_eui = EUI64::from_str(&req.dev_eui).map_err(|e| e.status())?;
-        let dcs = match &req.device_config_store {
-            Some(v) => v,
-            None => {
-                return Err(Status::invalid_argument("device_config_store is missing"));
-            }
-        };
 
         self.validator
             .validate(
@@ -44,6 +39,10 @@ impl DeviceConfigStoreService for DeviceConfigStore {
                 validator::ValidateDeviceConfigStoreAccess::new(validator::Flag::Update, dev_eui),
             )
             .await?;
+
+        let Some(dcs) = &req.device_config_store else {
+            return Err(Status::invalid_argument("device_config_store is missing"));
+        };
 
         // upsert
         let _ = device_config_store::upsert(device_config_store::DeviceConfigStore {
@@ -264,6 +263,10 @@ pub mod test {
                     internal::DeviceSession {
                         region_config_id: "eu868".into(),
                         enabled_uplink_channel_indices: vec![0, 2],
+                        dr: 3,
+                        tx_power_index: 0,
+                        nb_trans: 2,
+                        max_duty_cycle: 6,
                         ..Default::default()
                     }
                     .into(),
@@ -284,7 +287,10 @@ pub mod test {
                 dev_eui: d.dev_eui.to_string(),
                 device_config_store: Some(api::DeviceConfigStore {
                     enabled_uplink_channel_indices: vec![0, 2],
-                    ..Default::default()
+                    dr: Some(3),
+                    tx_power_index: Some(6),
+                    nb_trans: Some(2),
+                    max_duty_cycle: None,
                 }),
             },
         );
@@ -301,7 +307,10 @@ pub mod test {
         assert_eq!(
             Some(api::DeviceConfigStore {
                 enabled_uplink_channel_indices: vec![0, 2],
-                ..Default::default()
+                dr: Some(3),
+                tx_power_index: Some(6),
+                nb_trans: Some(2),
+                max_duty_cycle: None,
             }),
             get_resp.get_ref().device_config_store
         );
@@ -313,7 +322,10 @@ pub mod test {
                 dev_eui: d.dev_eui.to_string(),
                 device_config_store: Some(api::DeviceConfigStore {
                     enabled_uplink_channel_indices: vec![0, 1, 2],
-                    ..Default::default()
+                    dr: Some(5),
+                    tx_power_index: Some(0),
+                    nb_trans: Some(1),
+                    max_duty_cycle: Some(6),
                 }),
             },
         );
@@ -330,7 +342,10 @@ pub mod test {
         assert_eq!(
             Some(api::DeviceConfigStore {
                 enabled_uplink_channel_indices: vec![0, 1, 2],
-                ..Default::default()
+                dr: Some(5),
+                tx_power_index: Some(0),
+                nb_trans: Some(1),
+                max_duty_cycle: Some(6),
             }),
             get_resp.get_ref().device_config_store
         );
@@ -362,12 +377,15 @@ pub mod test {
         assert_eq!(
             api::GetDeviceConfigAlignmentResponse {
                 enabled_uplink_channel_indices: Some(false),
-                ..Default::default()
+                dr: Some(false),
+                tx_power_index: Some(true),
+                nb_trans: Some(false),
+                max_duty_cycle: Some(true),
             },
             align_resp.into_inner()
         );
 
-        // get channels with correct enabled status
+        // get current params of the device
         let param_req = get_request(
             &key.id,
             api::GetDeviceCurrentParamsRequest {
@@ -376,39 +394,45 @@ pub mod test {
         );
         let param_resp = service.get_device_current_params(param_req).await.unwrap();
         assert_eq!(
-            HashMap::from([
-                (
-                    0,
-                    api::DeviceUplinkChannel {
-                        frequency: 868100000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false
-                    }
-                ),
-                (
-                    1,
-                    api::DeviceUplinkChannel {
-                        frequency: 868300000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: false,
-                        user_defined: false
-                    }
-                ),
-                (
-                    2,
-                    api::DeviceUplinkChannel {
-                        frequency: 868500000,
-                        min_dr: 0,
-                        max_dr: 5,
-                        enabled: true,
-                        user_defined: false
-                    }
-                ),
-            ]),
-            param_resp.get_ref().channels
+            api::GetDeviceCurrentParamsResponse {
+                channels: HashMap::from([
+                    (
+                        0,
+                        api::DeviceUplinkChannel {
+                            frequency: 868100000,
+                            min_dr: 0,
+                            max_dr: 5,
+                            enabled: true,
+                            user_defined: false
+                        }
+                    ),
+                    (
+                        1,
+                        api::DeviceUplinkChannel {
+                            frequency: 868300000,
+                            min_dr: 0,
+                            max_dr: 5,
+                            enabled: false,
+                            user_defined: false
+                        }
+                    ),
+                    (
+                        2,
+                        api::DeviceUplinkChannel {
+                            frequency: 868500000,
+                            min_dr: 0,
+                            max_dr: 5,
+                            enabled: true,
+                            user_defined: false
+                        }
+                    ),
+                ]),
+                dr: 3,
+                tx_power_index: 0,
+                nb_trans: 2,
+                max_duty_cycle: 6,
+            },
+            param_resp.into_inner()
         );
 
         // delete
