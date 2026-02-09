@@ -1250,7 +1250,7 @@ impl Data {
             }
         }
 
-        let curr_channels: HashMap<usize, lrwn::region::Channel> = ds
+        let current_channels: HashMap<usize, lrwn::region::Channel> = ds
             .extra_uplink_channels
             .iter()
             .map(|(k, v)| {
@@ -1492,11 +1492,11 @@ impl Data {
             .and_then(|dcs| dcs.max_duty_cycle)
             .map(|max_duty_cycle| max_duty_cycle as u8);
 
-        if let Some(requested_max_duty_cycle) = max_duty_cycle_config {
-            if current_max_duty_cycle != requested_max_duty_cycle {
-                self.mac_commands
-                    .push(maccommand::duty_cycle::request(requested_max_duty_cycle))
-            }
+        if let Some(requested_max_duty_cycle) = max_duty_cycle_config
+            && current_max_duty_cycle != requested_max_duty_cycle
+        {
+            self.mac_commands
+                .push(maccommand::duty_cycle::request(requested_max_duty_cycle))
         }
 
         Ok(())

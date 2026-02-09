@@ -263,7 +263,7 @@ pub mod test {
         // create device
         let d = {
             let dp = device_profile::test::create_device_profile(None).await;
-            let app = application::test::create_application(Some(dp.tenant_id.into())).await;
+            let app = application::test::create_application(None).await;
             device::create(device::Device {
                 name: "test-dev".into(),
                 dev_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),

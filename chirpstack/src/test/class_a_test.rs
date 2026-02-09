@@ -13,8 +13,8 @@ use crate::storage::{
 };
 use crate::{config, gateway::backend as gateway_backend, integration, region, test, uplink};
 use chirpstack_api::{common, gw, integration as integration_pb, internal, stream};
-use lrwn::{region::CommonName, DutyCycleReqPayload};
 use lrwn::{AES128Key, DevAddr, EUI64};
+use lrwn::{DutyCycleReqPayload, region::CommonName};
 
 type Function = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
 
@@ -5715,11 +5715,12 @@ async fn test_lorawan_10_config_store() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t.id,
+        tenant_id: Some(t.id),
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_4,
-        reg_params_revision: lrwn::region::Revision::RP002_1_0_4,
+        reg_params_revision: lrwn::region::Revision::RP002_1_0_3,
         supports_otaa: true,
+        adr_algorithm_id: "default".into(),
         ..Default::default()
     })
     .await
@@ -5732,6 +5733,7 @@ async fn test_lorawan_10_config_store() {
         dev_eui: EUI64::from_be_bytes([2, 2, 3, 4, 5, 6, 7, 8]),
         enabled_class: DeviceClass::A,
         dev_addr: Some(DevAddr::from_be_bytes([1, 2, 3, 4])),
+        f_cnt_up: 8,
         ..Default::default()
     })
     .await
@@ -5765,16 +5767,15 @@ async fn test_lorawan_10_config_store() {
             kek_label: "".into(),
             aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
         }),
-        f_cnt_up: 8,
         n_f_cnt_down: 5,
         enabled_uplink_channel_indices: vec![0, 1, 2],
-        rx1_delay: 1,
         rx2_frequency: 869525000,
+        rx1_delay: 1,
         region_config_id: "eu868".into(),
         ..Default::default()
     };
 
-    let ds_8chan = internal::DeviceSession {
+    let ds_7chan = internal::DeviceSession {
         enabled_uplink_channel_indices: vec![0, 1, 2, 3, 4, 5, 6, 7],
         ..ds.clone()
     };
@@ -5951,7 +5952,7 @@ async fn test_lorawan_10_config_store() {
                     device_config_store::delete(&dev_eui).await.unwrap();
                 })
             })),
-            device_session: Some(ds_8chan.clone()),
+            device_session: Some(ds_7chan.clone()),
             tx_info: tx_info.clone(),
             rx_info: rx_info.clone(),
             phy_payload: up.clone(),
@@ -6116,6 +6117,15 @@ async fn test_lorawan_10_config_store() {
     ];
 
     for tst in &tests {
+        let _ = device::partial_update(
+            dev.dev_eui,
+            &device::DeviceChangeset {
+                f_cnt_up: Some(dev.f_cnt_up),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         run_test(tst).await;
     }
 }

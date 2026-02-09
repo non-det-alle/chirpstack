@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
-use tonic::{Request, Response, Status};
 use uuid::Uuid;
 
 use chirpstack_api::api;
 use chirpstack_api::api::device_config_store_service_server::DeviceConfigStoreService;
+use chirpstack_api::tonic::{self, Request, Response, Status};
 use lrwn::EUI64;
 
 use super::auth::validator;
@@ -213,8 +213,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
                         *i as u32,
                         api::DeviceUplinkChannel {
                             frequency: c.frequency,
-                            min_dr: c.min_dr as u32,
-                            max_dr: c.max_dr as u32,
+                            data_rates: c.data_rates.iter().clone().map(|&v| v as u32).collect(),
                             enabled: enabled.contains(i),
                             user_defined: c.user_defined,
                         },
@@ -253,7 +252,7 @@ pub mod test {
         // create device
         let d = {
             let dp = device_profile::test::create_device_profile(None).await;
-            let app = application::test::create_application(Some(dp.tenant_id.into())).await;
+            let app = application::test::create_application(None).await;
             device::create(device::Device {
                 name: "test-dev".into(),
                 dev_eui: EUI64::from_be_bytes([1, 2, 3, 4, 5, 6, 7, 8]),
@@ -400,8 +399,7 @@ pub mod test {
                         0,
                         api::DeviceUplinkChannel {
                             frequency: 868100000,
-                            min_dr: 0,
-                            max_dr: 5,
+                            data_rates: vec![0, 1, 2, 3, 4, 5],
                             enabled: true,
                             user_defined: false
                         }
@@ -410,8 +408,7 @@ pub mod test {
                         1,
                         api::DeviceUplinkChannel {
                             frequency: 868300000,
-                            min_dr: 0,
-                            max_dr: 5,
+                            data_rates: vec![0, 1, 2, 3, 4, 5],
                             enabled: false,
                             user_defined: false
                         }
@@ -420,8 +417,7 @@ pub mod test {
                         2,
                         api::DeviceUplinkChannel {
                             frequency: 868500000,
-                            min_dr: 0,
-                            max_dr: 5,
+                            data_rates: vec![0, 1, 2, 3, 4, 5],
                             enabled: true,
                             user_defined: false
                         }
