@@ -7,10 +7,12 @@ use tracing::{error, info};
 use crate::monitoring::prometheus;
 use diesel::{ConnectionError, ConnectionResult};
 use diesel_async::pooled_connection::deadpool::{Object as DeadpoolObject, Pool as DeadpoolPool};
-use diesel_async::pooled_connection::{AsyncDieselConnectionManager, ManagerConfig};
+use diesel_async::pooled_connection::{
+    AsyncDieselConnectionManager, ManagerConfig, RecyclingMethod,
+};
 use diesel_async::{AsyncConnection, AsyncPgConnection};
-use futures::{future::BoxFuture, FutureExt};
-use prometheus_client::metrics::histogram::{exponential_buckets, Histogram};
+use futures::{FutureExt, future::BoxFuture};
+use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
 use scoped_futures::ScopedBoxFuture;
 
 use crate::config;
@@ -35,6 +37,26 @@ pub fn setup(conf: &config::Postgresql) -> Result<()> {
     info!("Setting up PostgreSQL connection pool");
     let mut config = ManagerConfig::default();
     config.custom_setup = Box::new(pg_establish_connection);
+
+    // Set recycling method based on configuration
+    config.recycling_method = match conf.connection_recycling_method.to_lowercase().as_str() {
+        "fast" => {
+            info!("Using Fast connection recycling method (no validation query)");
+            RecyclingMethod::Fast
+        }
+        "verified" => {
+            info!("Using Verified connection recycling method (SELECT 1 validation query)");
+            RecyclingMethod::Verified
+        }
+        _ => {
+            error!(
+                method = %conf.connection_recycling_method,
+                "Invalid connection_recycling_method, defaulting to 'verified'. Valid options: 'fast', 'verified'"
+            );
+            RecyclingMethod::Verified
+        }
+    };
+
     let mgr = AsyncDieselConnectionManager::<AsyncPgConnection>::new_with_config(&conf.dsn, config);
     let pool = DeadpoolPool::builder(mgr)
         .max_size(conf.max_open_connections as usize)
@@ -46,7 +68,7 @@ pub fn setup(conf: &config::Postgresql) -> Result<()> {
 
 // Source:
 // https://github.com/weiznich/diesel_async/blob/main/examples/postgres/pooled-with-rustls/src/main.rs
-fn pg_establish_connection(config: &str) -> BoxFuture<ConnectionResult<AsyncPgConnection>> {
+fn pg_establish_connection(config: &str) -> BoxFuture<'_, ConnectionResult<AsyncPgConnection>> {
     let fut = async {
         let conf = config::get();
 

@@ -1,12 +1,11 @@
 use std::collections::HashSet;
 use std::str::FromStr;
 
-use tonic::{Request, Response, Status};
-use uuid::Uuid;
-
 use chirpstack_api::api;
 use chirpstack_api::api::multicast_group_service_server::MulticastGroupService;
+use chirpstack_api::tonic::{self, Request, Response, Status};
 use lrwn::{AES128Key, DevAddr, EUI64};
+use uuid::Uuid;
 
 use super::auth::validator;
 use super::error::ToStatus;
@@ -494,8 +493,8 @@ impl MulticastGroupService for MulticastGroup {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::api::auth::validator::RequestValidator;
     use crate::api::auth::AuthID;
+    use crate::api::auth::validator::RequestValidator;
     use crate::storage::{
         application, device, device_gateway, device_profile, gateway, multicast, tenant, user,
     };
@@ -556,7 +555,7 @@ pub mod test {
         // create device-profile
         let dp = device_profile::create(device_profile::DeviceProfile {
             name: "test-dp".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             ..Default::default()
         })
         .await

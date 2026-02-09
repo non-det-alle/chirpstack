@@ -1,4 +1,4 @@
-use tonic::{Code, Status};
+use chirpstack_api::tonic::{Code, Status};
 
 use crate::storage;
 
@@ -49,6 +49,9 @@ impl ToStatus for storage::error::Error {
             }
             storage::error::Error::ValidatorValidate(_) => {
                 Status::new(Code::InvalidArgument, format!("{:#}", self))
+            }
+            &storage::error::Error::FCntUpAlreadyUpdated(_) => {
+                Status::new(Code::Internal, format!("{:#}", self))
             }
             storage::error::Error::Multi(errors) => {
                 let errors = errors

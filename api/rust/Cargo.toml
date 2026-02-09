@@ -1,35 +1,39 @@
 [package]
   name = "chirpstack_api"
   description = "ChirpStack Protobuf / gRPC API definitions."
-  version = "4.14.0+cs.3"
-  authors = ["Orne Brocaar <info@brocaar.com>"]
-  license = "MIT"
-  homepage = "https://www.chirpstack.io"
-  repository = "https://github.com/chirpstack/chirpstack"
-  edition = "2021"
+  homepage.workspace = true
+  license.workspace = true
+  version.workspace = true
+  authors.workspace = true
+  edition.workspace = true
+  repository.workspace = true
 
 [features]
   default = ["api", "json"]
-  api = ["tonic/transport", "tonic-build/transport", "tokio"]
+  api = [
+    "tonic-prost",
+    "tonic-prost-build/transport",
+    "tonic/transport",
+    "tonic-build/transport",
+    "tokio",
+  ]
+  server = ["tonic/router"]
   json = ["pbjson", "pbjson-types", "serde"]
   internal = []
 
 [dependencies]
-  prost = "0.13"
-  prost-types = "0.13"
-  hex = "0.4"
-  rand = "0.9"
-  tonic = { version = "0.13", features = [
-    "codegen",
-    "prost",
-  ], default-features = false, optional = true }
-  tokio = { version = "1.44", features = ["macros"], optional = true }
-  pbjson = { version = "0.7", optional = true }
-  pbjson-types = { version = "0.7", optional = true }
-  serde = { version = "1.0", optional = true }
+  prost.workspace = true
+  prost-types.workspace = true
+  hex.workspace = true
+  getrandom.workspace = true
+  tonic = { workspace = true, features = ["codegen"], optional = true }
+  tonic-prost = { workspace = true, optional = true }
+  tokio = { workspace = true, optional = true }
+  pbjson = { workspace = true, optional = true }
+  pbjson-types = { workspace = true, optional = true }
+  serde = { workspace = true, optional = true }
 
 [build-dependencies]
-  tonic-build = { version = "0.13", features = [
-    "prost",
-  ], default-features = false }
-  pbjson-build = "0.7"
+  tonic-build.workspace = true
+  tonic-prost-build.workspace = true
+  pbjson-build.workspace = true

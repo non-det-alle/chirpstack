@@ -2,19 +2,19 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use diesel::{dsl, prelude::*};
 use diesel_async::RunQueryDsl;
-use email_address::EmailAddress;
 use pbkdf2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Algorithm, Pbkdf2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use tracing::info;
 use uuid::Uuid;
+use validator::Validate;
 
 use super::error::Error;
 use super::schema::user;
 use super::{fields, get_async_db_conn};
 
-#[derive(Queryable, Insertable, PartialEq, Eq, Debug, Clone)]
+#[derive(Queryable, Insertable, PartialEq, Eq, Debug, Clone, Validate)]
 #[diesel(table_name = user)]
 pub struct User {
     pub id: fields::Uuid,
@@ -23,6 +23,7 @@ pub struct User {
     pub updated_at: DateTime<Utc>,
     pub is_admin: bool,
     pub is_active: bool,
+    #[validate(email)]
     pub email: String,
     pub email_verified: bool,
     pub password_hash: String,
@@ -49,14 +50,6 @@ impl Default for User {
 }
 
 impl User {
-    pub fn validate(&self) -> Result<(), Error> {
-        if self.email != "admin" && !EmailAddress::is_valid(&self.email) {
-            return Err(Error::InvalidEmail);
-        }
-
-        Ok(())
-    }
-
     pub fn set_password_hash(&mut self, pw: &str, rounds: u32) -> Result<(), Error> {
         self.password_hash = hash_password(pw, rounds)?;
         Ok(())
@@ -244,7 +237,10 @@ pub mod test {
     fn test_verify_password() {
         // this is the ChirpStack Application Server default admin hash, with == removed
         // to test the compatibility betweeh the two pbkdf2 implementations.
-        assert!(verify_password("admin", "$pbkdf2-sha512$i=1,l=64$l8zGKtxRESq3PA2kFhHRWA$H3lGMxOt55wjwoc+myeOoABofJY9oDpldJa7fhqdjbh700V6FLPML75UmBOt9J5VFNjAL1AvqCozA1HJM0QVGA"));
+        assert!(verify_password(
+            "admin",
+            "$pbkdf2-sha512$i=1,l=64$l8zGKtxRESq3PA2kFhHRWA$H3lGMxOt55wjwoc+myeOoABofJY9oDpldJa7fhqdjbh700V6FLPML75UmBOt9J5VFNjAL1AvqCozA1HJM0QVGA"
+        ));
     }
 
     #[tokio::test]
@@ -265,9 +261,11 @@ pub mod test {
         assert_eq!(user, user_get);
 
         // get_by_email_and_pw
-        assert!(get_by_email_and_pw("test@example.com", "bar")
-            .await
-            .is_err());
+        assert!(
+            get_by_email_and_pw("test@example.com", "bar")
+                .await
+                .is_err()
+        );
         let user_get = get_by_email_and_pw("test@example.com", "password!")
             .await
             .unwrap();

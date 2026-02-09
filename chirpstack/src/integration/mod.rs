@@ -18,6 +18,7 @@ use lrwn::EUI64;
 mod amqp;
 mod aws_sns;
 mod azure_service_bus;
+mod blynk;
 mod gcp_pub_sub;
 mod http;
 mod ifttt;
@@ -128,12 +129,6 @@ pub trait Integration {
         vars: &HashMap<String, String>,
         pl: &integration::LocationEvent,
     ) -> Result<()>;
-
-    async fn integration_event(
-        &self,
-        vars: &HashMap<String, String>,
-        pl: &integration::IntegrationEvent,
-    ) -> Result<()>;
 }
 
 // Returns a Vec of integrations for the given Application ID.
@@ -177,6 +172,9 @@ async fn for_application_id(id: Uuid) -> Result<Vec<Box<dyn Integration + Sync +
             }
             application::IntegrationConfiguration::Ifttt(conf) => {
                 Box::new(ifttt::Integration::new(conf))
+            }
+            application::IntegrationConfiguration::Blynk(conf) => {
+                Box::new(blynk::Integration::new(conf))
             }
             _ => {
                 continue;
@@ -481,48 +479,6 @@ async fn _location_event(
     Ok(())
 }
 
-pub async fn integration_event(
-    application_id: Uuid,
-    vars: &HashMap<String, String>,
-    pl: &integration::IntegrationEvent,
-) {
-    tokio::spawn({
-        let vars = vars.clone();
-        let pl = pl.clone();
-
-        async move {
-            if let Err(err) = _integration_event(application_id, &vars, &pl).await {
-                warn!(application_id = %application_id, error = %err.full(), "Location event error");
-            }
-        }
-    });
-}
-
-async fn _integration_event(
-    application_id: Uuid,
-    vars: &HashMap<String, String>,
-    pl: &integration::IntegrationEvent,
-) -> Result<()> {
-    let app_ints = for_application_id(application_id)
-        .await
-        .context("Get integrations for application")?;
-    let global_ints = GLOBAL_INTEGRATIONS.read().await;
-    let mut futures = Vec::new();
-
-    for (i, _) in app_ints.iter().enumerate() {
-        futures.push(app_ints[i].integration_event(vars, pl));
-    }
-    for (i, _) in global_ints.iter().enumerate() {
-        futures.push(global_ints[i].integration_event(vars, pl));
-    }
-
-    for e in join_all(futures).await {
-        e?;
-    }
-
-    Ok(())
-}
-
 async fn handle_down_command(application_id: String, pl: integration::DownlinkCommand) {
     let err = async {
         info!(dev_eui = %pl.dev_eui, "Handling downlink command for device");
@@ -539,10 +495,12 @@ async fn handle_down_command(application_id: String, pl: integration::DownlinkCo
         }
 
         let mut data = pl.data.clone();
+        let mut f_port = pl.f_port as u8;
+
         if let Some(obj) = &pl.object {
             let dp = device_profile::get(&dev.device_profile_id).await?;
 
-            data = codec::struct_to_binary(
+            (f_port, data) = codec::struct_to_binary(
                 dp.payload_codec_runtime,
                 pl.f_port as u8,
                 &dev.variables,
@@ -557,7 +515,7 @@ async fn handle_down_command(application_id: String, pl: integration::DownlinkCo
                 true => Uuid::new_v4().into(),
                 false => Uuid::from_str(&pl.id)?.into(),
             },
-            f_port: pl.f_port as i16,
+            f_port: f_port as i16,
             confirmed: pl.confirmed,
             data,
             dev_eui,

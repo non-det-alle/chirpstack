@@ -1,12 +1,11 @@
 use std::str::FromStr;
 
-use chrono::Utc;
-use tonic::{Request, Response, Status};
-use uuid::Uuid;
-
 use chirpstack_api::api;
 use chirpstack_api::api::fuota_service_server::FuotaService;
+use chirpstack_api::tonic::{self, Request, Response, Status};
+use chrono::Utc;
 use lrwn::EUI64;
+use uuid::Uuid;
 
 use crate::aeskey::get_random_aes_key;
 use crate::api::auth::validator;
@@ -649,8 +648,8 @@ impl FuotaService for Fuota {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::auth::validator::RequestValidator;
     use crate::api::auth::AuthID;
+    use crate::api::auth::validator::RequestValidator;
     use crate::storage::{application, device, device_profile, gateway, tenant, user};
     use crate::test;
 
@@ -688,7 +687,7 @@ mod test {
 
         // create dp
         let dp = device_profile::create(device_profile::DeviceProfile {
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             name: "test-dp".into(),
             ..Default::default()
         })

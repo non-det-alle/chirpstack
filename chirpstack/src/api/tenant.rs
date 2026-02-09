@@ -1,12 +1,11 @@
 use std::str::FromStr;
 
-use tonic::{Request, Response, Status};
-use uuid::Uuid;
-
 use chirpstack_api::api;
 use chirpstack_api::api::tenant_service_server::TenantService;
+use chirpstack_api::tonic::{self, Request, Response, Status};
+use uuid::Uuid;
 
-use super::auth::{validator, AuthID};
+use super::auth::{AuthID, validator};
 use super::error::ToStatus;
 use super::helpers;
 use crate::storage::{fields, tenant, user};
@@ -381,12 +380,12 @@ impl TenantService for Tenant {
             .await?;
 
         let auth_id = request.extensions().get::<AuthID>().unwrap();
-        if let AuthID::User(id) = auth_id {
-            if id == &user_id {
-                return Err(Status::invalid_argument(
-                    "you can not delete yourself from the user",
-                ));
-            }
+        if let AuthID::User(id) = auth_id
+            && id == &user_id
+        {
+            return Err(Status::invalid_argument(
+                "you can not delete yourself from the user",
+            ));
         }
 
         tenant::delete_user(&tenant_id, &user_id)
@@ -449,8 +448,8 @@ impl TenantService for Tenant {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::api::auth::validator::RequestValidator;
     use crate::api::auth::AuthID;
+    use crate::api::auth::validator::RequestValidator;
     use crate::test;
 
     #[tokio::test]

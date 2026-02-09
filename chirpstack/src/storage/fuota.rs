@@ -183,12 +183,15 @@ impl Default for FuotaDeploymentJob {
 pub async fn create_deployment(d: FuotaDeployment) -> Result<FuotaDeployment, Error> {
     d.validate()?;
 
-    let app = storage::application::get(&d.application_id).await?;
     let dp = device_profile::get(&d.device_profile_id).await?;
-    if app.tenant_id != dp.tenant_id {
-        return Err(Error::Validation(
-            "The application and device-profile must be under the samen tenant".into(),
-        ));
+
+    if let Some(tenant_id) = dp.tenant_id {
+        let app = storage::application::get(&d.application_id).await?;
+        if app.tenant_id != tenant_id {
+            return Err(Error::Validation(
+                "The application and device-profile must be under the same tenant".into(),
+            ));
+        }
     }
 
     let d: FuotaDeployment = diesel::insert_into(fuota_deployment::table)
@@ -743,7 +746,7 @@ pub async fn get_max_fragment_size(d: &FuotaDeployment) -> Result<usize> {
     let dp = device_profile::get(&d.device_profile_id).await?;
     let region_conf = lrwn::region::get(dp.region, false, false);
     let max_pl_size = region_conf
-        .get_max_payload_size(dp.mac_version, dp.reg_params_revision, d.multicast_dr as u8)?
+        .get_max_dl_payload_size(dp.mac_version, dp.reg_params_revision, d.multicast_dr as u8)?
         .n
         - 3;
 
@@ -832,7 +835,7 @@ mod test {
         .unwrap();
 
         let dp = device_profile::create(device_profile::DeviceProfile {
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             name: "test-dp".into(),
             ..Default::default()
         })
@@ -905,7 +908,7 @@ mod test {
         .unwrap();
 
         let dp = device_profile::create(device_profile::DeviceProfile {
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             name: "test-dp".into(),
             ..Default::default()
         })
@@ -913,7 +916,7 @@ mod test {
         .unwrap();
 
         let dp2 = device_profile::create(device_profile::DeviceProfile {
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             name: "test-dp".into(),
             ..Default::default()
         })
@@ -1020,7 +1023,7 @@ mod test {
         .unwrap();
 
         let dp = device_profile::create(device_profile::DeviceProfile {
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             name: "test-dp".into(),
             ..Default::default()
         })
@@ -1055,9 +1058,11 @@ mod test {
         .unwrap();
 
         // adding gateteway from other tenant fails
-        assert!(add_gateways(d.id.into(), vec![gw2.gateway_id])
-            .await
-            .is_err());
+        assert!(
+            add_gateways(d.id.into(), vec![gw2.gateway_id])
+                .await
+                .is_err()
+        );
 
         // add gateway
         add_gateways(d.id.into(), vec![gw.gateway_id])
@@ -1097,7 +1102,7 @@ mod test {
         .unwrap();
 
         let dp = device_profile::create(device_profile::DeviceProfile {
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             name: "test-dp".into(),
             ..Default::default()
         })
@@ -1183,7 +1188,7 @@ mod test {
         .unwrap();
 
         let dp = device_profile::create(device_profile::DeviceProfile {
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             name: "test-dp".into(),
             ..Default::default()
         })

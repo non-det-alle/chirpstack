@@ -7,13 +7,13 @@ use anyhow::Result;
 use chrono::{Duration, DurationRound};
 use prost::Message;
 use tokio::sync::RwLock;
-use tracing::{debug, info, span, Level};
+use tracing::{Level, debug, info, span};
 
 use crate::gpstime::ToGpsTime;
 use crate::{config, stream};
 use backend::{Client, ClientConfig, GWInfoElement, ULMetaData};
 use chirpstack_api::{common, gw};
-use lrwn::{region, DevAddr, NetID, EUI64};
+use lrwn::{DevAddr, EUI64, NetID, region};
 
 static CLIENTS: LazyLock<RwLock<HashMap<NetID, Arc<Client>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -222,10 +222,18 @@ pub fn get_net_ids_for_dev_addr(dev_addr: DevAddr) -> Vec<NetID> {
     out
 }
 
-pub fn rx_info_to_gw_info(rx_info_set: &[gw::UplinkRxInfo]) -> Result<Vec<GWInfoElement>> {
+pub fn rx_info_to_gw_info(
+    rf_region: &str,
+    rx_info_set: &[gw::UplinkRxInfo],
+) -> Result<Vec<GWInfoElement>> {
     let mut out: Vec<GWInfoElement> = Vec::new();
 
     for rx_info in rx_info_set {
+        let mut rx_info = rx_info.clone();
+        rx_info
+            .metadata
+            .insert("rf_region".to_string(), rf_region.to_string());
+
         let gw_id = EUI64::from_str(&rx_info.gateway_id)?;
 
         out.push(GWInfoElement {
@@ -234,7 +242,7 @@ pub fn rx_info_to_gw_info(rx_info_set: &[gw::UplinkRxInfo]) -> Result<Vec<GWInfo
                 .fine_time_since_gps_epoch
                 .as_ref()
                 .map(|v| v.nanos as usize),
-            rf_region: "".to_string(),
+            rf_region: rf_region.to_string(),
             rssi: Some(rx_info.rssi as isize),
             snr: Some(rx_info.snr),
             lat: rx_info.location.as_ref().map(|v| v.latitude),
@@ -296,7 +304,7 @@ pub fn ul_meta_data_to_tx_info(ul_meta_data: &ULMetaData) -> Result<gw::UplinkTx
             return Err(anyhow!("ULFreq is not set"));
         }
     };
-    let params = region_conf.get_data_rate(dr)?;
+    let params = region_conf.get_data_rate(true, dr)?;
 
     Ok(gw::UplinkTxInfo {
         frequency: freq,

@@ -1,12 +1,12 @@
 use std::cmp;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rand::Rng;
-use tracing::{debug, span, trace, warn, Instrument, Level};
+use tracing::{Instrument, Level, debug, span, trace, warn};
 
 use crate::api::backend::get_async_receiver;
 use crate::api::helpers::{FromProto, ToProto};
@@ -24,7 +24,7 @@ use crate::storage::{
 use crate::uplink::{RelayContext, UplinkFrameSet};
 use crate::{adr, config, gateway, integration, maccommand, region, sensitivity};
 use chirpstack_api::{gw, integration as integration_pb, internal};
-use lrwn::{keys, AES128Key, NetID};
+use lrwn::{AES128Key, NetID, keys};
 
 struct DownlinkFrameItem {
     downlink_frame_item: gw::DownlinkFrameItem,
@@ -566,31 +566,30 @@ impl Data {
             }
 
             // Handle expired payload.
-            if let Some(expires_at) = qi.expires_at {
-                if expires_at < Utc::now() {
-                    device_queue::delete_item(&qi.id)
-                        .await
-                        .context("Delete device queue-item")?;
+            if let Some(expires_at) = qi.expires_at
+                && expires_at < Utc::now()
+            {
+                device_queue::delete_item(&qi.id)
+                    .await
+                    .context("Delete device queue-item")?;
 
-                    let pl = integration_pb::LogEvent {
-                        time: Some(Utc::now().into()),
-                        device_info: Some(device_info.clone()),
-                        level: integration_pb::LogLevel::Error.into(),
-                        code: integration_pb::LogCode::Expired.into(),
-                        description: "Device queue-item discarded because it has expired"
-                            .to_string(),
-                        context: [("queue_item_id".to_string(), qi.id.to_string())]
-                            .iter()
-                            .cloned()
-                            .collect(),
-                    };
+                let pl = integration_pb::LogEvent {
+                    time: Some(Utc::now().into()),
+                    device_info: Some(device_info.clone()),
+                    level: integration_pb::LogLevel::Error.into(),
+                    code: integration_pb::LogCode::Expired.into(),
+                    description: "Device queue-item discarded because it has expired".to_string(),
+                    context: [("queue_item_id".to_string(), qi.id.to_string())]
+                        .iter()
+                        .cloned()
+                        .collect(),
+                };
 
-                    integration::log_event(self.application.id.into(), &self.device.variables, &pl)
-                        .await;
-                    warn!(dev_eui = %self.device.dev_eui, device_queue_item_id = %qi.id, "Device queue-item discarded because it has expired");
+                integration::log_event(self.application.id.into(), &self.device.variables, &pl)
+                    .await;
+                warn!(dev_eui = %self.device.dev_eui, device_queue_item_id = %qi.id, "Device queue-item discarded because it has expired");
 
-                    continue;
-                }
+                continue;
             }
 
             // Handle payload size.
@@ -746,6 +745,7 @@ impl Data {
         trace!("Setting downlink PHYPayloads");
         let mut f_pending = self.more_device_queue_items;
         let dev_addr = self.device.get_dev_addr()?;
+        let device_f_cnt_up = self.device.f_cnt_up as u32;
         let ds = self.device.get_device_session_mut()?;
 
         for item in self.downlink_frame_items.iter_mut() {
@@ -880,7 +880,7 @@ impl Data {
             // this is not an ACK, then DownlinkDataMIC will zero out ConfFCnt.
             phy.set_downlink_data_mic(
                 ds.mac_version().from_proto(),
-                ds.f_cnt_up.overflowing_sub(1).0,
+                device_f_cnt_up.overflowing_sub(1).0,
                 &lrwn::AES128Key::from_slice(&ds.s_nwk_s_int_key)?,
             )
             .context("Set downlink data MIC")?;
@@ -933,7 +933,7 @@ impl Data {
             // this is not an ACK, then DownlinkDataMIC will zero out ConfFCnt.
             relay_phy.set_downlink_data_mic(
                 relay_ds.mac_version().from_proto(),
-                relay_ds.f_cnt_up - 1,
+                (relay_ctx.device.f_cnt_up as u32) - 1,
                 &lrwn::AES128Key::from_slice(&relay_ds.s_nwk_s_int_key)?,
             )?;
 
@@ -978,7 +978,7 @@ impl Data {
             // this is not an ACK, then DownlinkDataMIC will zero out ConfFCnt.
             relay_phy.set_downlink_data_mic(
                 relay_ds.mac_version().from_proto(),
-                relay_ds.f_cnt_up - 1,
+                (relay_ctx.device.f_cnt_up as u32) - 1,
                 &lrwn::AES128Key::from_slice(&relay_ds.s_nwk_s_int_key)?,
             )?;
 
@@ -1084,9 +1084,9 @@ impl Data {
 
     fn check_for_first_uplink(&self) -> Result<(), Error> {
         trace!("Checking if device has sent its first uplink already");
-        let ds = self.device.get_device_session().map_err(|_| Error::Abort)?;
+        self.device.get_device_session().map_err(|_| Error::Abort)?;
 
-        if ds.f_cnt_up == 0 {
+        if self.device.f_cnt_up == 0 {
             debug!("Device must send its first uplink first");
             return Err(Error::Abort);
         }
@@ -1201,12 +1201,42 @@ impl Data {
         let mut wanted_channels: HashMap<usize, lrwn::region::Channel> = HashMap::new();
         let ds = self.device.get_device_session_mut()?;
 
+        // Get the data-rates supported by the device, or else fallback onto
+        // the default min / max DR values.
+        let supported_ul_drs: HashSet<u8> =
+            if self.device_profile.supported_uplink_data_rates.is_empty() {
+                (self.region_conf.get_defaults().min_ul_dr
+                    ..=self.region_conf.get_defaults().max_ul_dr)
+                    .collect()
+            } else {
+                self.device_profile
+                    .supported_uplink_data_rates
+                    .iter()
+                    .filter_map(|&v| v.map(|v| v as u8))
+                    .collect()
+            };
+
         for i in self.region_conf.get_user_defined_uplink_channel_indices() {
-            let c = self.region_conf.get_uplink_channel(i)?;
-            wanted_channels.insert(i, c);
+            // We calculate the data-rates that the channel and device have
+            // in common. It could be that the device only supports a sub-set
+            // of the data-rates provided by the channel. E.g. the channel
+            // might support DR0-5 + DR12-13, but the device might only support
+            // DR0-5.
+            let mut channel = self.region_conf.get_uplink_channel(i)?;
+            let channel_drs: HashSet<u8> = channel.data_rates.into_iter().collect();
+            let mut common_drs: Vec<u8> = channel_drs
+                .intersection(&supported_ul_drs)
+                .cloned()
+                .collect();
+            common_drs.sort();
+
+            if !common_drs.is_empty() {
+                channel.data_rates = common_drs;
+                wanted_channels.insert(i, channel);
+            }
         }
 
-        // cleanup channels that do not exist anydmore
+        // cleanup channels that do not exist anymore
         // these will be disabled by the LinkADRReq channel-mask reconfiguration
         let ds_keys: Vec<usize> = ds
             .extra_uplink_channels
@@ -1228,15 +1258,23 @@ impl Data {
                     *k as usize,
                     lrwn::region::Channel {
                         frequency: v.frequency,
-                        min_dr: v.min_dr as u8,
-                        max_dr: v.max_dr as u8,
+                        data_rates: if v.data_rates.is_empty() {
+                            (v.min_dr..=v.max_dr).map(|v| v as u8).collect()
+                        } else {
+                            v.data_rates.iter().map(|&v| v as u8).collect()
+                        },
                         ..Default::default()
                     },
                 )
             })
             .collect();
 
-        if let Some(block) = maccommand::new_channel::request(3, &curr_channels, &wanted_channels) {
+        if let Some(block) = maccommand::new_channel::request(
+            3,
+            &current_channels,
+            &wanted_channels,
+            self.region_conf.clone(),
+        )? {
             self.mac_commands.push(block);
         }
 
@@ -1314,7 +1352,7 @@ impl Data {
 
         let dr = self
             .region_conf
-            .get_data_rate(self.uplink_frame_set.as_ref().unwrap().dr)?;
+            .get_data_rate(true, self.uplink_frame_set.as_ref().unwrap().dr)?;
 
         let ufs = self.uplink_frame_set.as_ref().unwrap();
         let dev_eui = self.device.dev_eui;
@@ -2020,22 +2058,22 @@ impl Data {
                 });
             }
 
-            if let Some(filter) = relay.filters.first() {
-                if !filter.provisioned {
-                    let set = lrwn::MACCommandSet::new(vec![lrwn::MACCommand::FilterListReq(
-                        lrwn::FilterListReqPayload {
-                            filter_list_idx: 0,
-                            filter_list_action: lrwn::FilterListAction::Filter,
-                            filter_list_eui: vec![],
-                        },
-                    )]);
-                    self.mac_commands.push(set);
+            if let Some(filter) = relay.filters.first()
+                && !filter.provisioned
+            {
+                let set = lrwn::MACCommandSet::new(vec![lrwn::MACCommand::FilterListReq(
+                    lrwn::FilterListReqPayload {
+                        filter_list_idx: 0,
+                        filter_list_action: lrwn::FilterListAction::Filter,
+                        filter_list_eui: vec![],
+                    },
+                )]);
+                self.mac_commands.push(set);
 
-                    // Return because we can't add multiple sets and if we would combine
-                    // multiple commands as a single set, it might not fit in a single
-                    // downlink.
-                    return Ok(());
-                }
+                // Return because we can't add multiple sets and if we would combine
+                // multiple commands as a single set, it might not fit in a single
+                // downlink.
+                return Ok(());
             }
         }
 
@@ -2228,7 +2266,7 @@ impl Data {
             self.uplink_frame_set.as_ref().unwrap().dr,
             ds.rx1_dr_offset as usize,
         )?;
-        let rx1_dr = self.region_conf.get_data_rate(rx1_dr_index)?;
+        let rx1_dr = self.region_conf.get_data_rate(false, rx1_dr_index)?;
 
         // set DR to tx_info.
         helpers::set_tx_info_data_rate(&mut tx_info, &rx1_dr)?;
@@ -2260,7 +2298,7 @@ impl Data {
         });
 
         // get remaining payload size
-        let max_pl_size = self.region_conf.get_max_payload_size(
+        let max_pl_size = self.region_conf.get_max_dl_payload_size(
             ds.mac_version().from_proto(),
             self.device_profile.reg_params_revision,
             rx1_dr_index,
@@ -2297,7 +2335,7 @@ impl Data {
             self.uplink_frame_set.as_ref().unwrap().dr,
             relay_ds.rx1_dr_offset as usize,
         )?;
-        let rx1_dr_relay = self.region_conf.get_data_rate(rx1_dr_index_relay)?;
+        let rx1_dr_relay = self.region_conf.get_data_rate(false, rx1_dr_index_relay)?;
 
         // set DR to tx_info.
         helpers::set_tx_info_data_rate(&mut tx_info, &rx1_dr_relay)?;
@@ -2329,7 +2367,7 @@ impl Data {
         });
 
         // get remaining payload size (relay)
-        let max_pl_size_relay = self.region_conf.get_max_payload_size(
+        let max_pl_size_relay = self.region_conf.get_max_dl_payload_size(
             relay_ds.mac_version().from_proto(),
             relay_ctx.device_profile.reg_params_revision,
             rx1_dr_index_relay,
@@ -2339,7 +2377,7 @@ impl Data {
         let rx1_dr_index_ed = self
             .region_conf
             .get_rx1_data_rate_index(relay_ctx.req.metadata.dr, ds.rx1_dr_offset as usize)?;
-        let max_pl_size_ed = self.region_conf.get_max_payload_size(
+        let max_pl_size_ed = self.region_conf.get_max_dl_payload_size(
             ds.mac_version().from_proto(),
             self.device_profile.reg_params_revision,
             rx1_dr_index_ed,
@@ -2382,7 +2420,7 @@ impl Data {
         };
 
         // Set DR to tx-info.
-        let rx2_dr = self.region_conf.get_data_rate(ds.rx2_dr as u8)?;
+        let rx2_dr = self.region_conf.get_data_rate(false, ds.rx2_dr as u8)?;
         helpers::set_tx_info_data_rate(&mut tx_info, &rx2_dr)?;
 
         // set tx power
@@ -2418,7 +2456,7 @@ impl Data {
         }
 
         // get remaining payload size
-        let max_pl_size = self.region_conf.get_max_payload_size(
+        let max_pl_size = self.region_conf.get_max_dl_payload_size(
             ds.mac_version().from_proto(),
             self.device_profile.reg_params_revision,
             ds.rx2_dr as u8,
@@ -2452,7 +2490,9 @@ impl Data {
         };
 
         // Set DR to tx-info.
-        let rx2_dr_relay = self.region_conf.get_data_rate(relay_ds.rx2_dr as u8)?;
+        let rx2_dr_relay = self
+            .region_conf
+            .get_data_rate(false, relay_ds.rx2_dr as u8)?;
         helpers::set_tx_info_data_rate(&mut tx_info, &rx2_dr_relay)?;
 
         // set tx power
@@ -2488,14 +2528,14 @@ impl Data {
         }
 
         // get remaining payload size (relay).
-        let max_pl_size_relay = self.region_conf.get_max_payload_size(
+        let max_pl_size_relay = self.region_conf.get_max_dl_payload_size(
             relay_ds.mac_version().from_proto(),
             relay_ctx.device_profile.reg_params_revision,
             relay_ds.rx2_dr as u8,
         )?;
 
         // get remaining payload size (end-device).
-        let max_pl_size_ed = self.region_conf.get_max_payload_size(
+        let max_pl_size_ed = self.region_conf.get_max_dl_payload_size(
             ds.mac_version().from_proto(),
             self.device_profile.reg_params_revision,
             ds.rx2_dr as u8,
@@ -2556,7 +2596,7 @@ impl Data {
         // Set DR to tx-info.
         let ping_dr = self
             .region_conf
-            .get_data_rate(ds.class_b_ping_slot_dr as u8)?;
+            .get_data_rate(false, ds.class_b_ping_slot_dr as u8)?;
         helpers::set_tx_info_data_rate(&mut tx_info, &ping_dr)?;
 
         // set tx power
@@ -2605,7 +2645,7 @@ impl Data {
         }
 
         // get remaining payload size
-        let max_pl_size = self.region_conf.get_max_payload_size(
+        let max_pl_size = self.region_conf.get_max_dl_payload_size(
             ds.mac_version().from_proto(),
             self.device_profile.reg_params_revision,
             ds.class_b_ping_slot_dr as u8,
@@ -2669,45 +2709,45 @@ impl Data {
             ds.rx1_dr_offset as usize,
         )?;
 
-        let rx1_dr = self.region_conf.get_data_rate(dr_rx1_index)?;
-        let rx2_dr = self.region_conf.get_data_rate(ds.rx2_dr as u8)?;
+        let rx1_dr = self.region_conf.get_data_rate(false, dr_rx1_index)?;
+        let rx2_dr = self.region_conf.get_data_rate(false, ds.rx2_dr as u8)?;
 
         // the calculation below only applies for LORA modulation
-        if let lrwn::region::DataRateModulation::Lora(rx1_dr) = rx1_dr {
-            if let lrwn::region::DataRateModulation::Lora(rx2_dr) = rx2_dr {
-                let tx_power_rx1 = if self.network_conf.downlink_tx_power != -1 {
-                    self.network_conf.downlink_tx_power
-                } else {
-                    self.region_conf.get_downlink_tx_power_eirp(
-                        self.region_conf.get_rx1_frequency_for_uplink_frequency(
-                            self.uplink_frame_set.as_ref().unwrap().tx_info.frequency,
-                        )?,
-                    ) as i32
-                };
+        if let lrwn::region::DataRateModulation::Lora(rx1_dr) = rx1_dr
+            && let lrwn::region::DataRateModulation::Lora(rx2_dr) = rx2_dr
+        {
+            let tx_power_rx1 = if self.network_conf.downlink_tx_power != -1 {
+                self.network_conf.downlink_tx_power
+            } else {
+                self.region_conf.get_downlink_tx_power_eirp(
+                    self.region_conf.get_rx1_frequency_for_uplink_frequency(
+                        self.uplink_frame_set.as_ref().unwrap().tx_info.frequency,
+                    )?,
+                ) as i32
+            };
 
-                let tx_power_rx2 = if self.network_conf.downlink_tx_power != -1 {
-                    self.network_conf.downlink_tx_power
-                } else {
-                    self.region_conf
-                        .get_downlink_tx_power_eirp(ds.rx2_frequency) as i32
-                };
+            let tx_power_rx2 = if self.network_conf.downlink_tx_power != -1 {
+                self.network_conf.downlink_tx_power
+            } else {
+                self.region_conf
+                    .get_downlink_tx_power_eirp(ds.rx2_frequency) as i32
+            };
 
-                let link_budget_rx1 = sensitivity::calculate_link_budget(
-                    rx1_dr.bandwidth,
-                    6.0,
-                    config::get_required_snr_for_sf(rx1_dr.spreading_factor)?,
-                    tx_power_rx1 as f32,
-                );
+            let link_budget_rx1 = sensitivity::calculate_link_budget(
+                rx1_dr.bandwidth,
+                6.0,
+                config::get_required_snr_for_sf(rx1_dr.spreading_factor)?,
+                tx_power_rx1 as f32,
+            );
 
-                let link_budget_rx2 = sensitivity::calculate_link_budget(
-                    rx2_dr.bandwidth,
-                    6.0,
-                    config::get_required_snr_for_sf(rx2_dr.spreading_factor)?,
-                    tx_power_rx2 as f32,
-                );
+            let link_budget_rx2 = sensitivity::calculate_link_budget(
+                rx2_dr.bandwidth,
+                6.0,
+                config::get_required_snr_for_sf(rx2_dr.spreading_factor)?,
+                tx_power_rx2 as f32,
+            );
 
-                return Ok(link_budget_rx2 > link_budget_rx1);
-            }
+            return Ok(link_budget_rx2 > link_budget_rx1);
         }
 
         Ok(false)
@@ -2781,7 +2821,7 @@ mod test {
 
         let dp = device_profile::create(device_profile::DeviceProfile {
             name: "dp".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             relay_params: Some(fields::RelayParams {
                 is_relay: true,
                 ..Default::default()
@@ -3506,7 +3546,7 @@ mod test {
 
         let dp_relay = device_profile::create(device_profile::DeviceProfile {
             name: "dp-relay".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             relay_params: Some(fields::RelayParams {
                 is_relay: true,
                 ..Default::default()
@@ -3518,7 +3558,7 @@ mod test {
 
         let dp_ed = device_profile::create(device_profile::DeviceProfile {
             name: "dp-ed".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             relay_params: Some(fields::RelayParams {
                 is_relay_ed: true,
                 ed_uplink_limit_bucket_size: 2,
@@ -3973,7 +4013,7 @@ mod test {
 
         let dp_relay = device_profile::create(device_profile::DeviceProfile {
             name: "dp-relay".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             relay_params: Some(fields::RelayParams {
                 is_relay: true,
                 ..Default::default()
@@ -3985,7 +4025,7 @@ mod test {
 
         let dp_ed = device_profile::create(device_profile::DeviceProfile {
             name: "dp-ed".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             ..Default::default()
         })
         .await
@@ -4619,7 +4659,7 @@ mod test {
 
         let dp_relay = device_profile::create(device_profile::DeviceProfile {
             name: "dp-relay".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             relay_params: Some(fields::RelayParams {
                 is_relay: true,
                 ..Default::default()
@@ -4631,7 +4671,7 @@ mod test {
 
         let dp_ed = device_profile::create(device_profile::DeviceProfile {
             name: "dp-ed".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             ..Default::default()
         })
         .await

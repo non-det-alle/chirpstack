@@ -7,32 +7,10 @@ use std::{
 };
 
 use anyhow::{Context as AnyhowContext, Result};
-use axum::{response::IntoResponse, routing::get, Router};
-use http::{
-    header::{self, HeaderMap, HeaderValue},
-    Request, StatusCode, Uri,
-};
-use pin_project::pin_project;
-use prometheus_client::encoding::EncodeLabelSet;
-use prometheus_client::metrics::counter::Counter;
-use prometheus_client::metrics::family::Family;
-use prometheus_client::metrics::histogram::Histogram;
-use rust_embed::RustEmbed;
-use tokio::task;
-use tokio::try_join;
-use tonic::transport::Server as TonicServer;
-use tonic::Code;
-use tonic_reflection::server::Builder as TonicReflectionBuilder;
-use tonic_web::GrpcWebLayer;
-use tower::util::ServiceExt;
-use tower::Service;
-use tower_http::trace::TraceLayer;
-use tracing::{error, info};
-
+use axum::{Router, response::IntoResponse, routing::get};
 use chirpstack_api::api::application_service_server::ApplicationServiceServer;
 use chirpstack_api::api::device_config_store_service_server::DeviceConfigStoreServiceServer;
 use chirpstack_api::api::device_profile_service_server::DeviceProfileServiceServer;
-use chirpstack_api::api::device_profile_template_service_server::DeviceProfileTemplateServiceServer;
 use chirpstack_api::api::device_service_server::DeviceServiceServer;
 use chirpstack_api::api::fuota_service_server::FuotaServiceServer;
 use chirpstack_api::api::gateway_service_server::GatewayServiceServer;
@@ -42,6 +20,25 @@ use chirpstack_api::api::relay_service_server::RelayServiceServer;
 use chirpstack_api::api::tenant_service_server::TenantServiceServer;
 use chirpstack_api::api::user_service_server::UserServiceServer;
 use chirpstack_api::stream as stream_pb;
+use chirpstack_api::tonic::{self, Code, transport::Server as TonicServer};
+use http::{
+    Request, StatusCode, Uri,
+    header::{self, HeaderMap, HeaderValue},
+};
+use pin_project::pin_project;
+use prometheus_client::encoding::EncodeLabelSet;
+use prometheus_client::metrics::counter::Counter;
+use prometheus_client::metrics::family::Family;
+use prometheus_client::metrics::histogram::Histogram;
+use rust_embed::RustEmbed;
+use tokio::task;
+use tokio::try_join;
+use tonic_reflection::server::Builder as TonicReflectionBuilder;
+use tonic_web::GrpcWebLayer;
+use tower::Service;
+use tower::util::ServiceExt;
+use tower_http::trace::TraceLayer;
+use tracing::{error, info};
 
 use super::config;
 use crate::api::auth::validator;
@@ -55,7 +52,6 @@ pub mod backend;
 pub mod device;
 pub mod device_config_store;
 pub mod device_profile;
-pub mod device_profile_template;
 pub mod error;
 pub mod fuota;
 pub mod gateway;
@@ -81,12 +77,9 @@ static GRPC_COUNTER: LazyLock<Family<GrpcLabels, Counter>> = LazyLock::new(|| {
 });
 static GRPC_HISTOGRAM: LazyLock<Family<GrpcLabels, Histogram>> = LazyLock::new(|| {
     let histogram = Family::<GrpcLabels, Histogram>::new_with_constructor(|| {
-        Histogram::new(
-            [
-                0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
-            ]
-            .into_iter(),
-        )
+        Histogram::new([
+            0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+        ])
     });
     prometheus::register(
         "api_requests_handled_seconds",
@@ -149,10 +142,6 @@ pub async fn setup() -> Result<()> {
         ))
         .add_service(DeviceProfileServiceServer::with_interceptor(
             device_profile::DeviceProfile::new(validator::RequestValidator::new()),
-            auth::auth_interceptor,
-        ))
-        .add_service(DeviceProfileTemplateServiceServer::with_interceptor(
-            device_profile_template::DeviceProfileTemplate::new(validator::RequestValidator::new()),
             auth::auth_interceptor,
         ))
         .add_service(TenantServiceServer::with_interceptor(

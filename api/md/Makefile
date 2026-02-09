@@ -12,7 +12,6 @@ api:
 		api/device.proto \
 		api/device_config_store.proto \
 		api/device_profile.proto \
-		api/device_profile_template.proto \
 		api/gateway.proto \
 		api/multicast_group.proto \
 		api/relay.proto \

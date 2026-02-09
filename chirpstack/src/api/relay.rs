@@ -1,11 +1,10 @@
 use std::str::FromStr;
 
-use tonic::{Request, Response, Status};
-use uuid::Uuid;
-
 use chirpstack_api::api;
 use chirpstack_api::api::relay_service_server::RelayService;
+use chirpstack_api::tonic::{self, Request, Response, Status};
 use lrwn::EUI64;
+use uuid::Uuid;
 
 use super::auth::validator;
 use super::error::ToStatus;
@@ -180,8 +179,8 @@ impl RelayService for Relay {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::api::auth::validator::RequestValidator;
     use crate::api::auth::AuthID;
+    use crate::api::auth::validator::RequestValidator;
     use crate::storage::{application, device, device_profile, fields, tenant, user};
     use crate::test;
 
@@ -219,7 +218,7 @@ pub mod test {
         // create device-profile
         let dp = device_profile::create(device_profile::DeviceProfile {
             name: "test-dp".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             ..Default::default()
         })
         .await
@@ -228,7 +227,7 @@ pub mod test {
         // create relay device-profile
         let dp_relay = device_profile::create(device_profile::DeviceProfile {
             name: "test-dp".into(),
-            tenant_id: t.id,
+            tenant_id: Some(t.id),
             relay_params: Some(fields::RelayParams {
                 is_relay: true,
                 ..Default::default()

@@ -85,13 +85,13 @@ pub async fn decode(
             .map_err(|e| anyhow!("JS error: {}", e))?;
 
         let errors: Result<Vec<String>, rquickjs::Error> = res.get("errors");
-        if let Ok(errors) = errors {
-            if !errors.is_empty() {
-                return Err(anyhow!(
-                    "decodeUplink returned errors: {}",
-                    errors.join(", ")
-                ));
-            }
+        if let Ok(errors) = errors
+            && !errors.is_empty()
+        {
+            return Err(anyhow!(
+                "decodeUplink returned errors: {}",
+                errors.join(", ")
+            ));
         }
 
         Ok(convert::rquickjs_to_struct(&res))
@@ -110,7 +110,7 @@ pub async fn encode(
     variables: &HashMap<String, String>,
     encode_config: &str,
     s: &prost_types::Struct,
-) -> Result<Vec<u8>> {
+) -> Result<(u8, Vec<u8>)> {
     let conf = config::get();
     let max_run_ts = SystemTime::now() + conf.codec.js.max_execution_time;
 
@@ -158,7 +158,6 @@ pub async fn encode(
         let buff: rquickjs::Function = buff.get("Buffer")?;
 
         let input = rquickjs::Object::new(ctx.clone())?;
-        input.set("fPort", f_port.into_js(&ctx)?)?;
         input.set("variables", variables.into_js(&ctx)?)?;
         input.set("data", convert::struct_to_rquickjs(&ctx, s))?;
 
@@ -175,21 +174,25 @@ pub async fn encode(
             .map_err(|e| anyhow!("JS error: {}", e))?;
 
         let errors: Result<Vec<String>, rquickjs::Error> = res.get("errors");
-        if let Ok(errors) = errors {
-            if !errors.is_empty() {
-                return Err(anyhow!(
-                    "encodeDownlink returned errors: {}",
-                    errors.join(", ")
-                ));
-            }
+        if let Ok(errors) = errors
+            && !errors.is_empty()
+        {
+            return Err(anyhow!(
+                "encodeDownlink returned errors: {}",
+                errors.join(", ")
+            ));
         }
 
         // Directly into u8 can result into the following error:
         // Error converting from js 'float' into type 'i32'
-        let v: Vec<f64> = res.get("bytes")?;
-        let v: Vec<u8> = v.iter().map(|v| *v as u8).collect();
+        let b: Vec<f64> = res.get("bytes")?;
+        let b: Vec<u8> = b.iter().map(|v| *v as u8).collect();
 
-        Ok(v)
+        // Get fPort, or else fallback on provided fPort.
+        let f_port: f64 = res.get("fPort").unwrap_or(f_port as f64);
+        let f_port = f_port as u8;
+
+        Ok((f_port, b))
     })
 }
 
@@ -368,7 +371,10 @@ pub mod test {
         };
 
         let out = encode(10, &vars, &encoder, &input).await;
-        assert_eq!("JS error: Error: foo is not defined\n    at encodeDownlink (eval_script:3:1)\n    at <eval> (eval_script:8:24)\n", out.err().unwrap().to_string());
+        assert_eq!(
+            "JS error: Error: foo is not defined\n    at encodeDownlink (eval_script:3:1)\n    at <eval> (eval_script:8:24)\n",
+            out.err().unwrap().to_string()
+        );
     }
 
     #[tokio::test]
@@ -388,8 +394,7 @@ pub mod test {
         "#
         .to_string();
 
-        let mut vars: HashMap<String, String> = HashMap::new();
-        vars.insert("foo".into(), "bar".into());
+        let vars: HashMap<String, String> = HashMap::new();
 
         let mut input = prost_types::Struct::default();
         input.fields.insert(
@@ -400,6 +405,26 @@ pub mod test {
         );
 
         let out = encode(10, &vars, &encoder, &input).await.unwrap();
-        assert_eq!(vec![1], out);
+        assert_eq!((10, vec![1]), out);
+    }
+
+    #[tokio::test]
+    pub async fn test_encode_fport() {
+        let encoder = r#"
+            function encodeDownlink(input) {
+                return {
+                    fPort: 20,
+                    bytes: [],
+                };
+            }
+            "#
+        .to_string();
+
+        let vars: HashMap<String, String> = HashMap::new();
+
+        let input = prost_types::Struct::default();
+
+        let out = encode(10, &vars, &encoder, &input).await.unwrap();
+        assert_eq!((20, vec![]), out);
     }
 }

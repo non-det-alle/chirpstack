@@ -1,8 +1,8 @@
 #[cfg(feature = "crypto")]
 use aes::{
-    cipher::BlockDecrypt,
-    cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit},
     Aes128, Block,
+    cipher::BlockDecrypt,
+    cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray},
 };
 use anyhow::Result;
 
@@ -570,10 +570,10 @@ impl PayloadCodec for McClassCSessionAnsPayload {
             return Err(anyhow!("Max mc_group_id value is 3"));
         }
 
-        if let Some(v) = self.time_to_start {
-            if v >= (1 << 24) {
-                return Err(anyhow!("Max time_to_start is 1^24 - 1"));
-            }
+        if let Some(v) = self.time_to_start
+            && v >= (1 << 24)
+        {
+            return Err(anyhow!("Max time_to_start is 1^24 - 1"));
         }
 
         let mut b = Vec::with_capacity(4);
@@ -715,10 +715,10 @@ impl PayloadCodec for McClassBSessionAnsPayload {
             return Err(anyhow!("Max mc_group_id value is 3"));
         }
 
-        if let Some(v) = self.time_to_start {
-            if v >= (1 << 24) {
-                return Err(anyhow!("Max time_to_start is 1^24 - 1"));
-            }
+        if let Some(v) = self.time_to_start
+            && v >= (1 << 24)
+        {
+            return Err(anyhow!("Max time_to_start is 1^24 - 1"));
         }
 
         let mut b = Vec::with_capacity(4);
@@ -1397,7 +1397,9 @@ mod test {
         let mc_key = AES128Key::from_bytes([2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2]);
 
         assert_eq!(
-            [52, 55, 214, 226, 49, 215, 2, 65, 155, 81, 180, 148, 114, 113, 182, 17],
+            [
+                52, 55, 214, 226, 49, 215, 2, 65, 155, 81, 180, 148, 114, 113, 182, 17
+            ],
             encrypt_mc_key(ke_key, mc_key)
         );
     }

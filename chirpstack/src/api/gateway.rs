@@ -2,13 +2,12 @@ use std::collections::HashSet;
 use std::str::FromStr;
 use std::time::SystemTime;
 
-use chrono::{DateTime, Duration, Local, Utc};
-use tonic::{Request, Response, Status};
-use uuid::Uuid;
-
 use chirpstack_api::api::gateway_service_server::GatewayService;
+use chirpstack_api::tonic::{self, Request, Response, Status};
 use chirpstack_api::{api, common};
+use chrono::{DateTime, Duration, Local, Utc};
 use lrwn::EUI64;
+use uuid::Uuid;
 
 use super::auth::validator;
 use super::error::ToStatus;
@@ -985,8 +984,8 @@ pub mod test {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::api::auth::validator::RequestValidator;
     use crate::api::auth::AuthID;
+    use crate::api::auth::validator::RequestValidator;
     use crate::storage::metrics;
     use crate::storage::{tenant, user};
     use crate::test;

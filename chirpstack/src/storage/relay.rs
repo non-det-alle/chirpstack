@@ -233,10 +233,10 @@ pub async fn add_device(relay_dev_eui: EUI64, device_dev_eui: EUI64) -> Result<(
             }
 
             // Validate that the device is not a relay.
-            if let Some(relay_params) = &dp.relay_params {
-                if relay_params.is_relay {
-                    return Err(Error::Validation("Can not add relay to a relay".into()));
-                }
+            if let Some(relay_params) = &dp.relay_params
+                && relay_params.is_relay
+            {
+                return Err(Error::Validation("Can not add relay to a relay".into()));
             }
 
             // Validate max. number of devices.
@@ -387,17 +387,21 @@ pub mod test {
         assert_eq!(0, device_list.len());
 
         // add device from other app errors
-        assert!(add_device(d_relay.dev_eui, d_other_app.dev_eui)
-            .await
-            .is_err());
+        assert!(
+            add_device(d_relay.dev_eui, d_other_app.dev_eui)
+                .await
+                .is_err()
+        );
 
         // add relay to relay errors
         assert!(add_device(d_relay.dev_eui, d_relay.dev_eui).await.is_err());
 
         // add to device that isn't relay errors
-        assert!(add_device(d_other_same_app.dev_eui, d.dev_eui)
-            .await
-            .is_err());
+        assert!(
+            add_device(d_other_same_app.dev_eui, d.dev_eui)
+                .await
+                .is_err()
+        );
 
         // add device to relay
         add_device(d_relay.dev_eui, d.dev_eui).await.unwrap();

@@ -17,7 +17,7 @@ use crate::storage::{
 use crate::{config, test, uplink};
 use chirpstack_api::{common, gw, internal};
 use lrwn::region::CommonName;
-use lrwn::{AES128Key, NetID, EUI64};
+use lrwn::{AES128Key, EUI64, NetID};
 
 #[tokio::test]
 async fn test_fns_uplink() {
@@ -121,7 +121,7 @@ async fn test_fns_uplink() {
                     recv_time,
                     rf_region: "EU868".to_string(),
                     gw_cnt: Some(1),
-                    gw_info: roaming::rx_info_to_gw_info(&[rx_info.clone()]).unwrap(),
+                    gw_info: roaming::rx_info_to_gw_info("EU868", &[rx_info.clone()]).unwrap(),
                     ..Default::default()
                 },
             });
@@ -206,7 +206,7 @@ async fn test_sns_uplink() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t.id,
+        tenant_id: Some(t.id),
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_2,
         reg_params_revision: lrwn::region::Revision::A,
@@ -227,6 +227,7 @@ async fn test_sns_uplink() {
         dev_eui: EUI64::from_be_bytes([2, 2, 3, 4, 5, 6, 7, 8]),
         enabled_class: DeviceClass::B,
         dev_addr: Some(dev_addr),
+        f_cnt_up: 8,
         device_session: Some(
             internal::DeviceSession {
                 mac_version: common::MacVersion::Lorawan104.into(),
@@ -238,7 +239,6 @@ async fn test_sns_uplink() {
                     kek_label: "".into(),
                     aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
                 }),
-                f_cnt_up: 8,
                 n_f_cnt_down: 5,
                 enabled_uplink_channel_indices: vec![0, 1, 2],
                 rx1_delay: 1,
@@ -301,10 +301,7 @@ async fn test_sns_uplink() {
     };
     rx_info
         .metadata
-        .insert("region_config_id".to_string(), "eu868".to_string());
-    rx_info
-        .metadata
-        .insert("region_common_name".to_string(), "EU868".to_string());
+        .insert("rf_region".to_string(), "EU868".to_string());
 
     let mut tx_info = gw::UplinkTxInfo {
         frequency: 868100000,
@@ -327,7 +324,7 @@ async fn test_sns_uplink() {
             recv_time,
             rf_region: "EU868".to_string(),
             gw_cnt: Some(1),
-            gw_info: roaming::rx_info_to_gw_info(&[rx_info.clone()]).unwrap(),
+            gw_info: roaming::rx_info_to_gw_info("EU868", &[rx_info.clone()]).unwrap(),
             ..Default::default()
         },
     };
@@ -458,7 +455,7 @@ async fn test_sns_roaming_not_allowed() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t.id,
+        tenant_id: Some(t.id),
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_2,
         reg_params_revision: lrwn::region::Revision::A,
@@ -478,6 +475,7 @@ async fn test_sns_roaming_not_allowed() {
         dev_eui: EUI64::from_be_bytes([2, 2, 3, 4, 5, 6, 7, 8]),
         enabled_class: DeviceClass::B,
         dev_addr: Some(dev_addr),
+        f_cnt_up: 8,
         device_session: Some(
             internal::DeviceSession {
                 mac_version: common::MacVersion::Lorawan104.into(),
@@ -489,7 +487,6 @@ async fn test_sns_roaming_not_allowed() {
                     kek_label: "".into(),
                     aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
                 }),
-                f_cnt_up: 8,
                 n_f_cnt_down: 5,
                 enabled_uplink_channel_indices: vec![0, 1, 2],
                 rx1_delay: 1,
@@ -569,7 +566,7 @@ async fn test_sns_roaming_not_allowed() {
             recv_time,
             rf_region: "EU868".to_string(),
             gw_cnt: Some(1),
-            gw_info: roaming::rx_info_to_gw_info(&[rx_info.clone()]).unwrap(),
+            gw_info: roaming::rx_info_to_gw_info("EU868", &[rx_info.clone()]).unwrap(),
             ..Default::default()
         },
     };
@@ -682,7 +679,7 @@ async fn test_sns_dev_not_found() {
             recv_time,
             rf_region: "EU868".to_string(),
             gw_cnt: Some(1),
-            gw_info: roaming::rx_info_to_gw_info(&[rx_info.clone()]).unwrap(),
+            gw_info: roaming::rx_info_to_gw_info("EU868", &[rx_info.clone()]).unwrap(),
             ..Default::default()
         },
     };

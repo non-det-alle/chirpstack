@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use anyhow::Result;
 use diesel_async::async_connection_wrapper::AsyncConnectionWrapper;
-use diesel_migrations::{embed_migrations, EmbeddedMigrations, MigrationHarness};
-use prometheus_client::metrics::histogram::{exponential_buckets, Histogram};
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
 use redis::aio::ConnectionLike;
 use tokio::sync::RwLock as TokioRwLock;
 use tokio::task;
@@ -20,7 +20,6 @@ pub mod device_config_store;
 pub mod device_gateway;
 pub mod device_keys;
 pub mod device_profile;
-pub mod device_profile_template;
 pub mod device_queue;
 pub mod device_session;
 pub mod downlink_frame;
@@ -69,11 +68,11 @@ pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations_sqlit
 
 #[cfg(feature = "postgres")]
 pub use postgres::{
-    db_transaction, get_async_db_conn, AsyncPgPoolConnection as AsyncDbPoolConnection,
+    AsyncPgPoolConnection as AsyncDbPoolConnection, db_transaction, get_async_db_conn,
 };
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
-    db_transaction, get_async_db_conn, AsyncSqlitePoolConnection as AsyncDbPoolConnection,
+    AsyncSqlitePoolConnection as AsyncDbPoolConnection, db_transaction, get_async_db_conn,
 };
 
 #[derive(Clone)]
@@ -187,14 +186,47 @@ pub async fn run_db_migrations() -> Result<()> {
     let mut c_wrapped: AsyncConnectionWrapper<AsyncDbPoolConnection> =
         AsyncConnectionWrapper::from(c);
 
-    task::spawn_blocking(move || -> Result<()> {
+    #[cfg(feature = "postgres")]
+    let _ = task::spawn_blocking(move || -> Result<()> {
         c_wrapped
             .run_pending_migrations(MIGRATIONS)
             .map_err(|e| anyhow!("{}", e))?;
 
         Ok(())
     })
-    .await?
+    .await?;
+
+    #[cfg(feature = "sqlite")]
+    let _ = task::spawn_blocking(move || -> Result<()> {
+        use diesel::sql_types::Integer;
+        use diesel::{QueryableByName, RunQueryDsl};
+
+        #[derive(QueryableByName)]
+        struct FkPragma {
+            #[diesel(sql_type = Integer)]
+            foreign_keys: i32,
+        }
+
+        let fk_pragma: i32 = diesel::sql_query("pragma foreign_keys")
+            .get_result::<FkPragma>(&mut c_wrapped)?
+            .foreign_keys;
+        if fk_pragma != 0 {
+            let _ = diesel::sql_query("pragma foreign_keys = 0").execute(&mut c_wrapped)?;
+        }
+
+        c_wrapped
+            .run_pending_migrations(MIGRATIONS)
+            .map_err(|e| anyhow!("{}", e))?;
+
+        if fk_pragma != 0 {
+            let _ = diesel::sql_query("pragma foreign_keys = 1").execute(&mut c_wrapped)?;
+        }
+
+        Ok(())
+    })
+    .await?;
+
+    Ok(())
 }
 
 async fn set_async_redis_pool(p: AsyncRedisPool) {

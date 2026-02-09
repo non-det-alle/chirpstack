@@ -80,7 +80,7 @@ async fn test_gateway_filtering() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t_a.id,
+        tenant_id: Some(t_a.id),
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_2,
         reg_params_revision: lrwn::region::Revision::A,
@@ -161,34 +161,38 @@ async fn test_gateway_filtering() {
             tx_info: tx_info.clone(),
             phy_payload: jr_pl.clone(),
             extra_uplink_channels: vec![],
-            assert: vec![assert::device_session(
-                dev.dev_eui,
-                internal::DeviceSession {
-                    dev_addr: vec![1, 2, 3, 4],
-                    mac_version: common::MacVersion::Lorawan102.into(),
-                    f_nwk_s_int_key: vec![
-                        128, 47, 168, 41, 62, 215, 212, 79, 19, 83, 183, 201, 43, 169, 125, 200,
-                    ],
-                    s_nwk_s_int_key: vec![
-                        128, 47, 168, 41, 62, 215, 212, 79, 19, 83, 183, 201, 43, 169, 125, 200,
-                    ],
-                    nwk_s_enc_key: vec![
-                        128, 47, 168, 41, 62, 215, 212, 79, 19, 83, 183, 201, 43, 169, 125, 200,
-                    ],
-                    app_s_key: Some(common::KeyEnvelope {
-                        kek_label: "".into(),
-                        aes_key: vec![
-                            5, 211, 222, 240, 51, 52, 23, 15, 218, 155, 237, 228, 198, 37, 200, 117,
+            assert: vec![
+                assert::f_cnt_up(dev.dev_eui, 0),
+                assert::device_session(
+                    dev.dev_eui,
+                    internal::DeviceSession {
+                        dev_addr: vec![1, 2, 3, 4],
+                        mac_version: common::MacVersion::Lorawan102.into(),
+                        f_nwk_s_int_key: vec![
+                            128, 47, 168, 41, 62, 215, 212, 79, 19, 83, 183, 201, 43, 169, 125, 200,
                         ],
-                    }),
-                    rx1_delay: 1,
-                    rx2_frequency: 869525000,
-                    enabled_uplink_channel_indices: vec![0, 1, 2],
-                    nb_trans: 1,
-                    region_config_id: "eu868".to_string(),
-                    ..Default::default()
-                },
-            )],
+                        s_nwk_s_int_key: vec![
+                            128, 47, 168, 41, 62, 215, 212, 79, 19, 83, 183, 201, 43, 169, 125, 200,
+                        ],
+                        nwk_s_enc_key: vec![
+                            128, 47, 168, 41, 62, 215, 212, 79, 19, 83, 183, 201, 43, 169, 125, 200,
+                        ],
+                        app_s_key: Some(common::KeyEnvelope {
+                            kek_label: "".into(),
+                            aes_key: vec![
+                                5, 211, 222, 240, 51, 52, 23, 15, 218, 155, 237, 228, 198, 37, 200,
+                                117,
+                            ],
+                        }),
+                        rx1_delay: 1,
+                        rx2_frequency: 869525000,
+                        enabled_uplink_channel_indices: vec![0, 1, 2],
+                        nb_trans: 1,
+                        region_config_id: "eu868".to_string(),
+                        ..Default::default()
+                    },
+                ),
+            ],
         },
         Test {
             name: "private gateway other tenant".into(),
@@ -243,7 +247,7 @@ async fn test_lorawan_10() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t.id,
+        tenant_id: Some(t.id),
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_2,
         reg_params_revision: lrwn::region::Revision::A,
@@ -665,40 +669,40 @@ async fn test_lorawan_10() {
                                 3,
                                 internal::DeviceSessionChannel {
                                     frequency: 867100000,
-                                    min_dr: 0,
-                                    max_dr: 5,
+                                    data_rates: vec![0, 1, 2, 3, 4, 5],
+                                    ..Default::default()
                                 },
                             ),
                             (
                                 4,
                                 internal::DeviceSessionChannel {
                                     frequency: 867300000,
-                                    min_dr: 0,
-                                    max_dr: 5,
+                                    data_rates: vec![0, 1, 2, 3, 4, 5],
+                                    ..Default::default()
                                 },
                             ),
                             (
                                 5,
                                 internal::DeviceSessionChannel {
                                     frequency: 867500000,
-                                    min_dr: 0,
-                                    max_dr: 5,
+                                    data_rates: vec![0, 1, 2, 3, 4, 5],
+                                    ..Default::default()
                                 },
                             ),
                             (
                                 6,
                                 internal::DeviceSessionChannel {
                                     frequency: 867700000,
-                                    min_dr: 0,
-                                    max_dr: 5,
+                                    data_rates: vec![0, 1, 2, 3, 4, 5],
+                                    ..Default::default()
                                 },
                             ),
                             (
                                 7,
                                 internal::DeviceSessionChannel {
                                     frequency: 867900000,
-                                    min_dr: 0,
-                                    max_dr: 5,
+                                    data_rates: vec![0, 1, 2, 3, 4, 5],
+                                    ..Default::default()
                                 },
                             ),
                         ]
@@ -893,7 +897,7 @@ async fn test_lorawan_11() {
 
     let dp = device_profile::create(device_profile::DeviceProfile {
         name: "dp".into(),
-        tenant_id: t.id,
+        tenant_id: Some(t.id),
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_1_0,
         reg_params_revision: lrwn::region::Revision::RP002_1_0_3,
@@ -1220,8 +1224,8 @@ async fn run_test(t: &Test) {
             .extra_channels
             .push(config::ExtraChannel {
                 frequency: *f,
-                min_dr: 0,
-                max_dr: 5,
+                data_rates: vec![0, 1, 2, 3, 4, 5],
+                ..Default::default()
             });
     }
     config::set(conf);

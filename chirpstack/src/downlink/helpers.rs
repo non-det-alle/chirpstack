@@ -48,7 +48,7 @@ pub fn select_downlink_gateway(
 
     let region_conf = region::get(region_config_id)?;
 
-    let dr = region_conf.get_data_rate(rx_info.dr as u8)?;
+    let dr = region_conf.get_data_rate(true, rx_info.dr as u8)?;
     let mut required_snr: Option<f32> = None;
     if let DataRateModulation::Lora(dr) = dr {
         required_snr = Some(config::get_required_snr_for_sf(dr.spreading_factor)?);
@@ -64,10 +64,10 @@ pub fn select_downlink_gateway(
 
     let mut new_items = Vec::new();
     for item in &rx_info.items {
-        if let Some(required_snr) = required_snr {
-            if item.lora_snr - required_snr >= min_snr_margin {
-                new_items.push(item.clone());
-            }
+        if let Some(required_snr) = required_snr
+            && item.lora_snr - required_snr >= min_snr_margin
+        {
+            new_items.push(item.clone());
         }
     }
 

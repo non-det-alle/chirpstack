@@ -6,7 +6,7 @@ use petgraph::algo::min_spanning_tree;
 use petgraph::data::FromElements;
 use petgraph::graph::{DefaultIx, Graph, NodeIndex, UnGraph};
 use rand::Rng;
-use tracing::{span, trace, warn, Instrument, Level};
+use tracing::{Instrument, Level, span, trace, warn};
 
 use crate::downlink::{error::Error, helpers};
 use crate::gateway::backend as gateway_backend;
@@ -104,15 +104,15 @@ impl Multicast {
 
     async fn validate_expiration(&self) -> Result<(), Error> {
         trace!("Validating expires_at");
-        if let Some(expires_at) = self.multicast_group_queue_item.expires_at {
-            if Utc::now() > expires_at {
-                warn!(
-                    expires_at = %expires_at,
-                    "Discarding multicast-group queue item because it has expired"
-                );
-                multicast::delete_queue_item(&self.multicast_group_queue_item.id).await?;
-                return Err(Error::Abort);
-            }
+        if let Some(expires_at) = self.multicast_group_queue_item.expires_at
+            && Utc::now() > expires_at
+        {
+            warn!(
+                expires_at = %expires_at,
+                "Discarding multicast-group queue item because it has expired"
+            );
+            multicast::delete_queue_item(&self.multicast_group_queue_item.id).await?;
+            return Err(Error::Abort);
         }
 
         Ok(())
@@ -123,7 +123,7 @@ impl Multicast {
         let mg = self.multicast_group.as_ref().unwrap();
         let region_conf = region::get(&self.region_config_id)?;
 
-        let max_pl_size = region_conf.get_max_payload_size(
+        let max_pl_size = region_conf.get_max_dl_payload_size(
             lrwn::region::MacVersion::Latest,
             lrwn::region::Revision::Latest,
             mg.dr as u8,
@@ -149,7 +149,7 @@ impl Multicast {
         let network_conf = config::get_region_network(&self.region_config_id)?;
         let region_conf = region::get(&self.region_config_id)?;
         let mg = self.multicast_group.as_ref().unwrap();
-        let mc_dr = region_conf.get_data_rate(mg.dr as u8)?;
+        let mc_dr = region_conf.get_data_rate(false, mg.dr as u8)?;
 
         let mut tx_info = gw::DownlinkTxInfo {
             frequency: mg.frequency as u32,

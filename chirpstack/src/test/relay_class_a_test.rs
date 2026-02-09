@@ -57,7 +57,7 @@ async fn test_lorawan_10() {
 
     let dp_relay = device_profile::create(device_profile::DeviceProfile {
         name: "dp-relay".into(),
-        tenant_id: t.id,
+        tenant_id: Some(t.id),
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_4,
         reg_params_revision: lrwn::region::Revision::RP002_1_0_3,
@@ -74,7 +74,7 @@ async fn test_lorawan_10() {
 
     let dp_relay_ed = device_profile::create(device_profile::DeviceProfile {
         name: "dp-relay-ed".into(),
-        tenant_id: t.id,
+        tenant_id: Some(t.id),
         region: lrwn::region::CommonName::EU868,
         mac_version: lrwn::region::MacVersion::LORAWAN_1_0_4,
         reg_params_revision: lrwn::region::Revision::RP002_1_0_3,
@@ -95,6 +95,7 @@ async fn test_lorawan_10() {
         dev_eui: EUI64::from_be_bytes([1, 1, 1, 1, 1, 1, 1, 1]),
         enabled_class: DeviceClass::A,
         dev_addr: Some(DevAddr::from_be_bytes([1, 1, 1, 1])),
+        f_cnt_up: 8,
         ..Default::default()
     })
     .await
@@ -107,6 +108,7 @@ async fn test_lorawan_10() {
         dev_eui: EUI64::from_be_bytes([2, 2, 2, 2, 2, 2, 2, 2]),
         enabled_class: DeviceClass::A,
         dev_addr: Some(DevAddr::from_be_bytes([2, 2, 2, 2])),
+        f_cnt_up: 88,
         ..Default::default()
     })
     .await
@@ -134,7 +136,6 @@ async fn test_lorawan_10() {
             kek_label: "".into(),
             aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
         }),
-        f_cnt_up: 8,
         n_f_cnt_down: 5,
         enabled_uplink_channel_indices: vec![0, 1, 2],
         rx1_delay: 1,
@@ -153,7 +154,6 @@ async fn test_lorawan_10() {
             kek_label: "".into(),
             aes_key: vec![16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 2],
         }),
-        f_cnt_up: 88,
         n_f_cnt_down: 55,
         enabled_uplink_channel_indices: vec![0, 1, 2],
         rx1_delay: 1,
@@ -766,6 +766,24 @@ async fn test_lorawan_10() {
     ];
 
     for test in &tests {
+        let _ = device::partial_update(
+            dev_relay.dev_eui,
+            &device::DeviceChangeset {
+                f_cnt_up: Some(dev_relay.f_cnt_up),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let _ = device::partial_update(
+            dev_relay_ed.dev_eui,
+            &device::DeviceChangeset {
+                f_cnt_up: Some(dev_relay_ed.f_cnt_up),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
         run_test(test).await;
     }
 }

@@ -4,21 +4,20 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use anyhow::{Context as AnyhowContext, Result};
+use chirpstack_api::api;
+use chirpstack_api::api::internal_service_server::InternalService;
+use chirpstack_api::tonic::{self, Request, Response, Status};
 use futures::Stream;
-use reqwest::header::{HeaderMap, CONTENT_TYPE};
 use reqwest::Client;
+use reqwest::header::{CONTENT_TYPE, HeaderMap};
 use serde::Serialize;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status};
 use tracing::{debug, error, trace};
 use uuid::Uuid;
 
-use chirpstack_api::api;
-use chirpstack_api::api::internal_service_server::InternalService;
-
 use super::auth::claims;
-use super::auth::{validator, AuthID};
+use super::auth::{AuthID, validator};
 use super::error::ToStatus;
 use super::helpers::ToProto;
 use super::{helpers, oauth2, oidc};
@@ -958,8 +957,7 @@ impl InternalService for Internal {
             let ch = reg.get_uplink_channel(i).map_err(|e| e.status())?;
             out.uplink_channels.push(api::RegionChannel {
                 frequency: ch.frequency,
-                dr_min: ch.min_dr as u32,
-                dr_max: ch.max_dr as u32,
+                data_rates: ch.data_rates.into_iter().map(|v| v as u32).collect(),
             });
         }
 
