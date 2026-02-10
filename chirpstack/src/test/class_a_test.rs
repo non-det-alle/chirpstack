@@ -13,8 +13,8 @@ use crate::storage::{
 };
 use crate::{config, gateway::backend as gateway_backend, integration, region, test, uplink};
 use chirpstack_api::{common, gw, integration as integration_pb, internal, stream};
+use lrwn::region::CommonName;
 use lrwn::{AES128Key, DevAddr, EUI64};
-use lrwn::{DutyCycleReqPayload, region::CommonName};
 
 type Function = Box<dyn Fn() -> Pin<Box<dyn Future<Output = ()>>>>;
 
@@ -6076,7 +6076,7 @@ async fn test_lorawan_10_config_store() {
                                     ..Default::default()
                                 },
                                 f_opts: lrwn::MACCommandSet::new(vec![
-                                    lrwn::MACCommand::DutyCycleReq(DutyCycleReqPayload {
+                                    lrwn::MACCommand::DutyCycleReq(lrwn::DutyCycleReqPayload {
                                         max_duty_cycle: 13,
                                     }),
                                 ]),
@@ -6101,7 +6101,7 @@ async fn test_lorawan_10_config_store() {
                                     ..Default::default()
                                 },
                                 f_opts: lrwn::MACCommandSet::new(vec![
-                                    lrwn::MACCommand::DutyCycleReq(DutyCycleReqPayload {
+                                    lrwn::MACCommand::DutyCycleReq(lrwn::DutyCycleReqPayload {
                                         max_duty_cycle: 13,
                                     }),
                                 ]),
