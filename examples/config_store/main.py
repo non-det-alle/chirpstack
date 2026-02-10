@@ -20,7 +20,7 @@ if __name__ == "__main__":
 
         # Retrieve all application ids
         client = api.ApplicationServiceStub(channel)
-        resp = client.List(
+        resp: api.ListApplicationsResponse = client.List(
             api.ListApplicationsRequest(
                 limit=100,
                 tenant_id=tenant_id,
@@ -55,16 +55,16 @@ if __name__ == "__main__":
         client = api.DeviceConfigStoreServiceStub(channel)
 
         # Check available uplink channels
-        resp = client.GetAvailableUplinkChannels(
-            api.GetAvailableChannelsRequest(dev_eui=dev_eui),
+        resp: api.GetDeviceCurrentParamsResponse = client.GetDeviceCurrentParams(
+            api.GetDeviceCurrentParamsRequest(dev_eui=dev_eui),
             metadata=auth_token,
         )
         uplink_channels = resp.channels
         # Verify configuration feasibility
         while any((ch_id not in uplink_channels for ch_id in chmask)):
             time.sleep(5)
-            resp = client.GetAvailableUplinkChannels(
-                api.GetAvailableChannelsRequest(dev_eui=dev_eui),
+            resp = client.GetDeviceCurrentParams(
+                api.GetDeviceCurrentParamsRequest(dev_eui=dev_eui),
                 metadata=auth_token,
             )
             uplink_channels = resp.channels
@@ -73,11 +73,13 @@ if __name__ == "__main__":
         # Set chmask config
         resp = client.Set(
             api.SetDeviceConfigStoreRequest(
+                dev_eui=dev_eui,
                 device_config_store=api.DeviceConfigStore(
-                    dev_eui=dev_eui,
-                    chmask_config=api.ChMaskConfig(
-                        enabled_uplink_channel_indices=chmask
-                    ),
+                    enabled_uplink_channel_indices=chmask,
+                    dr=5,
+                    tx_power_index=3,
+                    nb_trans=2,
+                    max_duty_cycle=7,
                 ),
             ),
             metadata=auth_token,
@@ -93,10 +95,20 @@ if __name__ == "__main__":
         aligned = False
         while not aligned:
             time.sleep(5)
-            aligned = client.GetConfigStoreAlignment(
-                api.GetConfigStoreAlignmentRequest(dev_eui=dev_eui), metadata=auth_token
-            ).alignment.chmask_config
-            print(f"Alignment status: {aligned}")
+            resp: api.GetDeviceConfigAlignmentResponse = (
+                client.GetDeviceConfigAlignment(
+                    api.GetDeviceConfigAlignmentRequest(dev_eui=dev_eui),
+                    metadata=auth_token,
+                )
+            )
+            print(f"Alignment status: {resp}")
+            aligned = (
+                resp.enabled_uplink_channel_indices
+                and resp.dr
+                and resp.tx_power_index
+                and resp.nb_trans
+                and resp.max_duty_cycle
+            )
 
         input("\nPress enter to clean-up configs and terminate program...")
 
