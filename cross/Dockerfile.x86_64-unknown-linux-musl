@@ -1,9 +1,15 @@
 FROM ghcr.io/cross-rs/x86_64-unknown-linux-musl:main
 
 RUN apt-get update && \
-    apt-get --assume-yes install \
-    protobuf-compiler \
-    libprotobuf-dev
+apt-get --assume-yes install \
+unzip
+
+ENV PROTOBUF_VERSION=33.5
+RUN curl -L -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOBUF_VERSION}/protoc-${PROTOBUF_VERSION}-linux-x86_64.zip && \
+    unzip protoc.zip -d protoc/ && \
+    cp -r protoc/include/. /usr/include/ && \
+    cp -r protoc/bin/. /usr/bin/ && \
+    ldconfig
 
 ENV MUSL_PREFIX=x86_64-linux-musl
 ENV SQLITE_VERSION=3490100

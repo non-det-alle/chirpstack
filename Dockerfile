@@ -4,8 +4,8 @@ FROM --platform=$BUILDPLATFORM alpine:3.22.1 as binary
 ARG TARGETPLATFORM
 
 COPY target/x86_64-unknown-linux-musl/release/chirpstack /usr/bin/chirpstack-x86_64
-COPY target/armv7-unknown-linux-musleabihf/release/chirpstack /usr/bin/chirpstack-armv7hf
-COPY target/aarch64-unknown-linux-musl/release/chirpstack /usr/bin/chirpstack-aarch64
+# COPY target/armv7-unknown-linux-musleabihf/release/chirpstack /usr/bin/chirpstack-armv7hf
+# COPY target/aarch64-unknown-linux-musl/release/chirpstack /usr/bin/chirpstack-aarch64
 
 RUN case "$TARGETPLATFORM" in \
 	"linux/amd64") \
