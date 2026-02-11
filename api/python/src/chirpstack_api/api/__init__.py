@@ -6,8 +6,6 @@ from .device_config_store_pb2 import *
 from .device_config_store_pb2_grpc import *
 from .device_profile_pb2 import *
 from .device_profile_pb2_grpc import *
-from .device_profile_template_pb2 import *
-from .device_profile_template_pb2_grpc import *
 from .gateway_pb2 import *
 from .gateway_pb2_grpc import *
 from .internal_pb2 import *
