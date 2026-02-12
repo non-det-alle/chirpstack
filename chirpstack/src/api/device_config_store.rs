@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use chirpstack_api::api;
 use chirpstack_api::api::device_config_store_service_server::DeviceConfigStoreService;
-use chirpstack_api::tonic::{self, Request, Response, Status};
+use chirpstack_api::tonic::{self, Code, Request, Response, Status};
 use lrwn::EUI64;
 
 use super::auth::validator;
@@ -41,7 +41,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             .await?;
 
         let Some(dcs) = &req.device_config_store else {
-            return Err(Status::invalid_argument("device_config_store is missing"));
+            return Err(Status::invalid_argument("device_config_store not provided"));
         };
 
         // upsert
@@ -160,16 +160,42 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             )
             .await?;
 
-        let alignment = device_config_store::get_alignment(&dev_eui)
+        let dcs =
+            device_config_store::get(&dev_eui)
+                .await
+                .map_err(|e| match e.status().code() {
+                    Code::NotFound => {
+                        Status::not_found(format!("Device config store not found (id: {dev_eui})"))
+                    }
+                    _ => e.status(),
+                })?;
+
+        let d = device::get(&dev_eui)
             .await
-            .map_err(|e| e.status())?;
+            .map_err(|e| match e.status().code() {
+                Code::NotFound => {
+                    Status::not_found(format!("Device does not exist (id: {dev_eui})"))
+                }
+                _ => e.status(),
+            })?;
+
+        let ds = d.device_session.ok_or_else(|| {
+            Status::failed_precondition(format!("Device not (yet) activated (id: {dev_eui})"))
+        })?;
+
+        if ds.enabled_uplink_channel_indices.is_empty() {
+            return Err(Status::unavailable(format!(
+                "Device not (yet) seen (id: {dev_eui})"
+            )));
+        }
 
         Ok(Response::new(api::GetDeviceConfigAlignmentResponse {
-            enabled_uplink_channel_indices: alignment.enabled_uplink_channel_indices,
-            dr: alignment.dr,
-            tx_power_index: alignment.tx_power_index,
-            nb_trans: alignment.nb_trans,
-            max_duty_cycle: alignment.max_duty_cycle,
+            enabled_uplink_channel_indices: (!dcs.chmask_config.is_empty())
+                .then(|| dcs.chmask_config == ds.enabled_uplink_channel_indices),
+            dr: dcs.dr.map(|v| v == ds.dr as i16),
+            tx_power_index: dcs.tx_power_index.map(|v| v == ds.tx_power_index as i16),
+            nb_trans: dcs.nb_trans.map(|v| v == ds.nb_trans as i16),
+            max_duty_cycle: dcs.max_duty_cycle.map(|v| v == ds.max_duty_cycle as i16),
         }))
     }
 
@@ -188,7 +214,16 @@ impl DeviceConfigStoreService for DeviceConfigStore {
             .await?;
 
         let d = device::get(&dev_eui).await.map_err(|e| e.status())?;
-        let ds = d.get_device_session().map_err(|e| e.status())?;
+
+        let ds = d.device_session.ok_or_else(|| {
+            Status::failed_precondition(format!("Device not (yet) activated (id: {dev_eui})"))
+        })?;
+
+        if ds.enabled_uplink_channel_indices.is_empty() {
+            return Err(Status::unavailable(format!(
+                "Device not (yet) seen (id: {dev_eui})"
+            )));
+        }
 
         let channels = {
             let extra: Vec<usize> = ds

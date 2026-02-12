@@ -23,15 +23,6 @@ pub struct DeviceConfigStore {
     pub max_duty_cycle: Option<i16>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct ConfigStoreAlignment {
-    pub enabled_uplink_channel_indices: Option<bool>,
-    pub dr: Option<bool>,
-    pub tx_power_index: Option<bool>,
-    pub nb_trans: Option<bool>,
-    pub max_duty_cycle: Option<bool>,
-}
-
 impl DeviceConfigStore {
     fn validate(&mut self) -> Result<(), Error> {
         // chain all configurations here with &&
@@ -213,27 +204,6 @@ pub async fn list(
         .map_err(|e| Error::from_diesel(e, "".into()))
 }
 
-pub async fn get_alignment(dev_eui: &EUI64) -> Result<ConfigStoreAlignment, Error> {
-    let (dcs, ds): (DeviceConfigStore, Option<fields::DeviceSession>) = device_config_store::table
-        .find(&dev_eui)
-        .inner_join(device::table)
-        .select((device_config_store::all_columns, device::device_session))
-        .first(&mut get_async_db_conn().await?)
-        .await
-        .map_err(|e| Error::from_diesel(e, dev_eui.to_string()))?;
-
-    let ds = ds.ok_or_else(|| Error::NotFound(dev_eui.to_string()))?;
-
-    Ok(ConfigStoreAlignment {
-        enabled_uplink_channel_indices: (!dcs.chmask_config.is_empty())
-            .then(|| dcs.chmask_config == ds.enabled_uplink_channel_indices),
-        dr: dcs.dr.map(|v| v == ds.dr as i16),
-        tx_power_index: dcs.tx_power_index.map(|v| v == ds.tx_power_index as i16),
-        nb_trans: dcs.nb_trans.map(|v| v == ds.nb_trans as i16),
-        max_duty_cycle: dcs.max_duty_cycle.map(|v| v == ds.max_duty_cycle as i16),
-    })
-}
-
 #[cfg(test)]
 pub mod test {
     use super::*;
@@ -316,19 +286,6 @@ pub mod test {
         let dcs_get = get(&d.dev_eui).await.unwrap();
         assert_eq!(dcs, dcs_get);
 
-        // aligned
-        let align = get_alignment(&d.dev_eui).await.unwrap();
-        assert_eq!(
-            ConfigStoreAlignment {
-                enabled_uplink_channel_indices: Some(true),
-                dr: Some(false),
-                tx_power_index: None,
-                nb_trans: Some(false),
-                max_duty_cycle: None,
-            },
-            align
-        );
-
         // update
         dcs.chmask_config = vec![0, 1, 2, 3].into();
         dcs.dr = None;
@@ -338,19 +295,6 @@ pub mod test {
         dcs = upsert(dcs).await.unwrap();
         let dcs_get = get(&d.dev_eui).await.unwrap();
         assert_eq!(dcs, dcs_get);
-
-        // re-check aligned
-        let align = get_alignment(&d.dev_eui).await.unwrap();
-        assert_eq!(
-            ConfigStoreAlignment {
-                enabled_uplink_channel_indices: Some(false),
-                dr: None,
-                tx_power_index: Some(true),
-                nb_trans: None,
-                max_duty_cycle: Some(false),
-            },
-            align
-        );
 
         // get count and list
         let tests = vec![
