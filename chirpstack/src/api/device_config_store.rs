@@ -36,7 +36,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         self.validator
             .validate(
                 request.extensions(),
-                validator::ValidateDeviceConfigStoreAccess::new(validator::Flag::Update, dev_eui),
+                validator::ValidateDeviceAccess::new(validator::Flag::Update, dev_eui),
             )
             .await?;
 
@@ -70,7 +70,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         self.validator
             .validate(
                 request.extensions(),
-                validator::ValidateDeviceConfigStoreAccess::new(validator::Flag::Read, dev_eui),
+                validator::ValidateDeviceAccess::new(validator::Flag::Read, dev_eui),
             )
             .await?;
 
@@ -101,7 +101,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         self.validator
             .validate(
                 request.extensions(),
-                validator::ValidateDeviceConfigStoreAccess::new(validator::Flag::Delete, dev_eui),
+                validator::ValidateDeviceAccess::new(validator::Flag::Delete, dev_eui),
             )
             .await?;
 
@@ -122,7 +122,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         self.validator
             .validate(
                 request.extensions(),
-                validator::ValidateDeviceConfigStoresAccess::new(validator::Flag::List, app_id),
+                validator::ValidateDevicesAccess::new(validator::Flag::List, app_id),
             )
             .await?;
 
@@ -156,7 +156,7 @@ impl DeviceConfigStoreService for DeviceConfigStore {
         self.validator
             .validate(
                 request.extensions(),
-                validator::ValidateDeviceConfigStoreAccess::new(validator::Flag::Read, dev_eui),
+                validator::ValidateDeviceAccess::new(validator::Flag::Read, dev_eui),
             )
             .await?;
 
